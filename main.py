@@ -80,9 +80,10 @@ async def super_engine_run(army_accounts, target_users, trg_link, api_id, api_ha
 
 
 # 4️⃣ مسارات الـ API والواجهة
+# ✅ الشكل الصحيح والموافق للإصدارات الحديثة:
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 @app.post("/api/start-addition")
 async def start_addition(
