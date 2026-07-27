@@ -3,18 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>رادار سهم - المحرك الخارق</title>
+    <title>منصة رادار سهم - تسجيل الدخول</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
-    <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-gray-700">
-        <h1 class="text-2xl font-bold text-center mb-6 text-indigo-400">🚀 رادار سهم الشامل</h1>
+
+    <!-- 1️⃣ شاشة تسجيل الدخول / إنشاء حساب (تظهر أول ما يفتح الرابط) -->
+    <div id="authSection" class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-gray-700">
+        <h1 class="text-2xl font-bold text-center mb-2 text-indigo-400">🚀 رادار سهم</h1>
+        <p id="authSubtitle" class="text-xs text-center text-gray-400 mb-6">قم بتسجيل الدخول للوصول للمحرك الخارق</p>
+
+        <form id="authForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium mb-1">البريد الإلكتروني:</label>
+                <input type="email" id="email" required placeholder="name@example.com" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-1">كلمة المرور:</label>
+                <input type="password" id="password" required placeholder="••••••••" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
+            </div>
+            <div id="telegramIdField" class="hidden">
+                <label class="block text-sm font-medium mb-1">معرف التلغرام (Chat ID / UID) لصلك الإشعارات:</label>
+                <input type="text" id="telegramUid" placeholder="مثال: 12345678" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
+            </div>
+
+            <button type="submit" id="authBtn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-bold transition">تسجيل الدخول</button>
+        </form>
+
+        <div class="mt-4 text-center">
+            <button onclick="toggleAuthMode()" id="switchBtn" class="text-xs text-indigo-300 hover:underline">ليس لديك حساب؟ اضغط للإنشاء والتسجيل جديد</button>
+        </div>
+    </div>
+
+    <!-- 2️⃣ لوحة التحكم والمحرك (تختفي حتى يتم تسجيل الدخول) -->
+    <div id="dashboardSection" class="hidden bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-gray-700 relative">
+        <div class="flex justify-between items-center mb-6">
+            <button onclick="logout()" class="text-xs bg-red-600/80 hover:bg-red-700 px-3 py-1.5 rounded-lg">خروج 🚪</button>
+            <button onclick="toggleModal(true)" class="text-xs bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-lg font-bold">💳 شحن الرصيد</button>
+        </div>
+
+        <h1 class="text-2xl font-bold text-center mb-2 text-indigo-400">⚡ المحرك الخارق</h1>
+        <p id="userWelcome" class="text-xs text-center text-emerald-400 mb-6">مرحباً بك!</p>
         
         <form id="radarForm" class="space-y-4">
-            <div>
-                <label class="block text-sm font-medium mb-1">معرف المستخدم (UID / Chat ID):</label>
-                <input type="text" id="uid" required class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
-            </div>
             <div>
                 <label class="block text-sm font-medium mb-1">المجموعة المصدر (Source):</label>
                 <input type="text" id="src" placeholder="@group_source" required class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
@@ -23,52 +55,87 @@
                 <label class="block text-sm font-medium mb-1">المجموعة الهدف (Target):</label>
                 <input type="text" id="trg" placeholder="@group_target" required class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
             </div>
-            <button type="submit" id="submitBtn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-bold transition duration-200">إطلاق المحرك الخارق ⚡</button>
+            <button type="submit" id="submitBtn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-bold transition">إطلاق عمليات السحب والإضافة ⚡</button>
         </form>
 
         <div id="statusBox" class="mt-6 hidden">
-            <p id="statusText" class="text-sm text-center mb-2 text-indigo-300">جاري الاتصال...</p>
+            <p id="statusText" class="text-sm text-center mb-2 text-indigo-300">جاري الإطلاق...</p>
             <div class="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
-                <div id="progressBar" class="bg-indigo-500 h-3 rounded-full transition-all duration-300" style="width: 10%"></div>
+                <div id="progressBar" class="bg-indigo-500 h-3 rounded-full transition-all duration-300" style="width: 20%"></div>
             </div>
         </div>
     </div>
 
     <script>
+        // مفاتيح الاتصال المباشر بـ Supabase Auth
+        const SUPABASE_URL = "ضع_رابط_Supabase_هنا";
+        const SUPABASE_ANON_KEY = "ضع_مفتاح_Anon_هنا";
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let isSignUp = false;
+        let currentUser = null;
+
+        // التحقق من الجلسة أول ما يفتح الرابط
+        window.onload = async () => {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session) {
+                showDashboard(session.user);
+            }
+        };
+
+        function toggleAuthMode() {
+            isSignUp = !isSignUp;
+            document.getElementById('authSubtitle').innerText = isSignUp ? "إنشاء حساب جديد للاشتراك" : "قم بتسجيل الدخول للوصول للمحرك";
+            document.getElementById('authBtn').innerText = isSignUp ? "إنشاء حساب جديد" : "تسجيل الدخول";
+            document.getElementById('switchBtn').innerText = isSignUp ? "لديك حساب بالفعل؟ اضغط لتسجيل الدخول" : "ليس لديك حساب؟ اضغط للإنشاء والتسجيل جديد";
+            document.getElementById('telegramIdField').classList.toggle('hidden', !isSignUp);
+        }
+
+        document.getElementById('authForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+
+            if (isSignUp) {
+                const telegramUid = document.getElementById('telegramUid').value;
+                const { data, error } = await supabaseClient.auth.signUp({
+                    email,
+                    password,
+                    options: { data: { telegram_uid: telegramUid } }
+                });
+                if (error) alert("خطأ في التسجيل: " + error.message);
+                else {
+                    alert("تم إنشاء الحساب بنجاح! يتم الآن توجيهك...");
+                    showDashboard(data.user);
+                }
+            } else {
+                const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                if (error) alert("خطأ في تسجيل الدخول: " + error.message);
+                else showDashboard(data.user);
+            }
+        });
+
+        function showDashboard(user) {
+            currentUser = user;
+            document.getElementById('authSection').classList.add('hidden');
+            document.getElementById('dashboardSection').classList.remove('hidden');
+            document.getElementById('userWelcome').innerText = `المستخدم: ${user.email}`;
+        }
+
+        async function logout() {
+            await supabaseClient.auth.signOut();
+            window.location.reload();
+        }
+
         document.getElementById('radarForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const btn = document.getElementById('submitBtn');
-            const statusBox = document.getElementById('statusBox');
-            const statusText = document.getElementById('statusText');
-            const progressBar = document.getElementById('progressBar');
-            
-            btn.disabled = true;
-            btn.classList.add('opacity-50');
-            statusBox.classList.remove('hidden');
-            progressBar.style.width = '30%';
-            statusText.innerText = "جاري تحفيز جيش الحسابات وإطلاق الإشعار...";
-            
             const formData = new FormData();
-            formData.append('uid', document.getElementById('uid').value);
+            formData.append('uid', currentUser.user_metadata?.telegram_uid || currentUser.id);
             formData.append('src', document.getElementById('src').value);
             formData.append('trg', document.getElementById('trg').value);
 
-            try {
-                const res = await fetch('/api/start-addition', { method: 'POST', body: formData });
-                const data = await res.json();
-                
-                if(data.status === 'success') {
-                    progressBar.style.width = '100%';
-                    statusText.innerText = "✅ " + data.message + " (تفقد حسابك في تلغرام)";
-                } else {
-                    statusText.innerText = "❌ " + data.message;
-                }
-            } catch (err) {
-                statusText.innerText = "❌ حدث خطأ في الاتصال بالخادم";
-            } finally {
-                btn.disabled = false;
-                btn.classList.remove('opacity-50');
-            }
+            document.getElementById('statusBox').classList.remove('hidden');
+            await fetch('/api/start-addition', { method: 'POST', body: formData });
         });
     </script>
 </body>
