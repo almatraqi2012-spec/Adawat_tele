@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>منصة رادار سهم للإضافة</title>
+    <title>رادار سهم - المحرك الخارق</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
@@ -12,24 +12,24 @@
         
         <form id="radarForm" class="space-y-4">
             <div>
-                <label class="block text-sm font-medium mb-1">معرف المستخدم (UID):</label>
+                <label class="block text-sm font-medium mb-1">معرف المستخدم (UID / Chat ID):</label>
                 <input type="text" id="uid" required class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">المجموعة المصدر (Source):</label>
-                <input type="text" id="src" required class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
+                <input type="text" id="src" placeholder="@group_source" required class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
             </div>
             <div>
                 <label class="block text-sm font-medium mb-1">المجموعة الهدف (Target):</label>
-                <input type="text" id="trg" required class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
+                <input type="text" id="trg" placeholder="@group_target" required class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
             </div>
-            <button type="submit" id="submitBtn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-bold transition duration-200">بدء الإضافة الآن</button>
+            <button type="submit" id="submitBtn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 rounded-lg font-bold transition duration-200">إطلاق المحرك الخارق ⚡</button>
         </form>
 
         <div id="statusBox" class="mt-6 hidden">
-            <p id="statusText" class="text-sm text-center mb-2 text-indigo-300">جاري التشغيل...</p>
-            <div class="w-full bg-gray-700 rounded-full h-4">
-                <div id="progressBar" class="bg-indigo-500 h-4 rounded-full transition-all duration-300" style="width: 0%"></div>
+            <p id="statusText" class="text-sm text-center mb-2 text-indigo-300">جاري الاتصال...</p>
+            <div class="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
+                <div id="progressBar" class="bg-indigo-500 h-3 rounded-full transition-all duration-300" style="width: 10%"></div>
             </div>
         </div>
     </div>
@@ -40,26 +40,31 @@
             const btn = document.getElementById('submitBtn');
             const statusBox = document.getElementById('statusBox');
             const statusText = document.getElementById('statusText');
+            const progressBar = document.getElementById('progressBar');
             
             btn.disabled = true;
             btn.classList.add('opacity-50');
             statusBox.classList.remove('hidden');
+            progressBar.style.width = '30%';
+            statusText.innerText = "جاري تحفيز جيش الحسابات وإطلاق الإشعار...";
             
-            statusText.innerText = "جاري الاتصال والبدء بالتنفيذ...";
-            
-            // إرسال الطلب للـ Backend
             const formData = new FormData();
             formData.append('uid', document.getElementById('uid').value);
             formData.append('src', document.getElementById('src').value);
             formData.append('trg', document.getElementById('trg').value);
 
             try {
-                const res = await fetch('/api/add-batch', { method: 'POST', body: formData });
+                const res = await fetch('/api/start-addition', { method: 'POST', body: formData });
                 const data = await res.json();
-                statusText.innerText = data.message;
-                document.getElementById('progressBar').style.width = '100%';
+                
+                if(data.status === 'success') {
+                    progressBar.style.width = '100%';
+                    statusText.innerText = "✅ " + data.message + " (تفقد حسابك في تلغرام)";
+                } else {
+                    statusText.innerText = "❌ " + data.message;
+                }
             } catch (err) {
-                statusText.innerText = "حدث خطأ أثناء الاتصال بالخادم";
+                statusText.innerText = "❌ حدث خطأ في الاتصال بالخادم";
             } finally {
                 btn.disabled = false;
                 btn.classList.remove('opacity-50');
