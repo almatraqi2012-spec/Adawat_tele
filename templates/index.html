@@ -137,6 +137,28 @@
             document.getElementById('statusBox').classList.remove('hidden');
             await fetch('/api/start-addition', { method: 'POST', body: formData });
         });
+        if (isSignUp) {
+            const telegramUid = document.getElementById('telegramUid').value;
+            const { data, error } = await supabaseClient.auth.signUp({
+                email,
+                password,
+                options: { data: { telegram_uid: telegramUid } }
+            });
+
+        if (error) {
+            alert("خطأ في التسجيل: " + error.message);
+        } else {
+        // 🔔 إرسال إشعار التلغرام للمدير ببيانات المشترك الجديد
+            const fd = new FormData();
+            fd.append('email', email);
+            fd.append('telegram_uid', telegramUid || 'غير مدخل');
+            fetch('/api/notify-signup', { method: 'POST', body: fd });
+
+            alert("تم إنشاء الحساب بنجاح! يتم الآن توجيهك...");
+            showDashboard(data.user);
+        }
+    }
+        
     </script>
 </body>
 </html>
