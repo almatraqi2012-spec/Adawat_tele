@@ -24,7 +24,7 @@
                 <input type="password" id="password" required placeholder="••••••••" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
             </div>
             <div id="telegramIdField" class="hidden">
-                <label class="block text-sm font-medium mb-1">معرف التلغرام (Chat ID / UID) لصلك الإشعارات:</label>
+                <label class="block text-sm font-medium mb-1">معرف التلغرام (Chat ID / UID) لتوصلك الإشعارات:</label>
                 <input type="text" id="telegramUid" placeholder="مثال: 12345678" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 focus:outline-none focus:border-indigo-500">
             </div>
 
@@ -40,7 +40,7 @@
     <div id="dashboardSection" class="hidden bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-md border border-gray-700 relative">
         <div class="flex justify-between items-center mb-6">
             <button onclick="logout()" class="text-xs bg-red-600/80 hover:bg-red-700 px-3 py-1.5 rounded-lg">خروج 🚪</button>
-            <button onclick="toggleModal(true)" class="text-xs bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-lg font-bold">💳 شحن الرصيد</button>
+            <button onclick="alert('تواصل مع الدعم لشحن الرصيد')" class="text-xs bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-lg font-bold">💳 شحن الرصيد</button>
         </div>
 
         <h1 class="text-2xl font-bold text-center mb-2 text-indigo-400">⚡ المحرك الخارق</h1>
@@ -77,9 +77,13 @@
 
         // التحقق من الجلسة أول ما يفتح الرابط
         window.onload = async () => {
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (session) {
-                showDashboard(session.user);
+            try {
+                const { data: { session } } = await supabaseClient.auth.getSession();
+                if (session && session.user) {
+                    showDashboard(session.user);
+                }
+            } catch (err) {
+                console.error("خطأ في فحص الجلسة:", err);
             }
         };
 
@@ -93,25 +97,49 @@
 
         document.getElementById('authForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value.trim();
 
-            if (isSignUp) {
-                const telegramUid = document.getElementById('telegramUid').value;
-                const { data, error } = await supabaseClient.auth.signUp({
-                    email,
-                    password,
-                    options: { data: { telegram_uid: telegramUid } }
-                });
-                if (error) alert("خطأ في التسجيل: " + error.message);
-                else {
-                    alert("تم إنشاء الحساب بنجاح! يتم الآن توجيهك...");
-                    showDashboard(data.user);
+            const btn = document.getElementById('authBtn');
+            btn.disabled = true;
+            btn.innerText = "جاري المعالجة...";
+
+            try {
+                if (isSignUp) {
+                    const telegramUid = document.getElementById('telegramUid').value.trim();
+                    const { data, error } = await supabaseClient.auth.signUp({
+                        email,
+                        password,
+                        options: { data: { telegram_uid: telegramUid } }
+                    });
+
+                    if (error) {
+                        alert("❌ خطأ في التسجيل: " + error.message);
+                    } else if (data.user) {
+                        // إرسال إشعار للمدير ببيانات المشترك الجديد
+                        const fd = new FormData();
+                        fd.append('email', email);
+                        fd.append('telegram_uid', telegramUid || 'غير مدخل');
+                        fetch('/api/notify-signup', { method: 'POST', body: fd }).catch(() => {});
+
+                        alert("✅ تم إنشاء الحساب بنجاح! يتم الآن توجيهك...");
+                        showDashboard(data.user);
+                    } else {
+                        alert("⚠️ تم إنشاء الحساب، يرجى تفقّد بريدك الإلكتروني للتأكيد.");
+                    }
+                } else {
+                    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+                    if (error) {
+                        alert("❌ خطأ في تسجيل الدخول: " + error.message);
+                    } else if (data.user) {
+                        showDashboard(data.user);
+                    }
                 }
-            } else {
-                const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-                if (error) alert("خطأ في تسجيل الدخول: " + error.message);
-                else showDashboard(data.user);
+            } catch (err) {
+                alert("❌ حدث خطأ غير متوقع: " + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = isSignUp ? "إنشاء حساب جديد" : "تسجيل الدخول";
             }
         });
 
@@ -137,28 +165,6 @@
             document.getElementById('statusBox').classList.remove('hidden');
             await fetch('/api/start-addition', { method: 'POST', body: formData });
         });
-        if (isSignUp) {
-            const telegramUid = document.getElementById('telegramUid').value;
-            const { data, error } = await supabaseClient.auth.signUp({
-                email,
-                password,
-                options: { data: { telegram_uid: telegramUid } }
-            });
-
-        if (error) {
-            alert("خطأ في التسجيل: " + error.message);
-        } else {
-        // 🔔 إرسال إشعار التلغرام للمدير ببيانات المشترك الجديد
-            const fd = new FormData();
-            fd.append('email', email);
-            fd.append('telegram_uid', telegramUid || 'غير مدخل');
-            fetch('/api/notify-signup', { method: 'POST', body: fd });
-
-            alert("تم إنشاء الحساب بنجاح! يتم الآن توجيهك...");
-            showDashboard(data.user);
-        }
-    }
-        
     </script>
 </body>
 </html>
