@@ -249,3 +249,5 @@ async def run_adding_process(accounts, source, target):
             await client.disconnect()
         except Exception:
             continue
+            
+app = app
