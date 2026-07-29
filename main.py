@@ -447,7 +447,7 @@ async def run_multi_account_engine(accounts_data, source, target):
 
         client = TelegramClient(StringSession(acc["session_string"]), API_ID, API_HASH)
         added_by_this_account = 0
-        MAX_PER_ACCOUNT = 12
+        MAX_PER_ACCOUNT = 40
 
         try:
             await client.connect()
@@ -463,7 +463,7 @@ async def run_multi_account_engine(accounts_data, source, target):
                 try:
                     await client(InviteToChannelRequest(trg_entity, [user_to_add]))
                     added_by_this_account += 1
-                    await asyncio.sleep(12)
+                    await asyncio.sleep(10)
 
                 except (PeerFloodError, FloodWaitError):
                     break
