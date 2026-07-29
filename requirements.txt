@@ -1,8 +1,5 @@
-fastapi
-uvicorn
+flask
 telethon
 supabase
 pysocks
-jinja2
-python-multipart
 requests
