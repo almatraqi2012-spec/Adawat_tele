@@ -13,11 +13,11 @@ from supabase import create_client, Client
 # 1. إعدادات المفاتيح وربط Supabase
 # ==========================================
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://juuleypxvvcfgjdikpwu.supabase.co")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY", "ضع_مفتاح_SUPABASE_SERVICE_ROLE_هنا")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "")
 
 # بيانات Telegram API (استبدلها ببياناتك من my.telegram.org)
-API_ID = int(os.getenv("TELEGRAM_API_ID", "1234567"))
-API_HASH = os.getenv("TELEGRAM_API_HASH", "your_api_hash_here")
+API_ID = int(os.getenv("TELEGRAM_API_ID", "21349867"))
+API_HASH = os.getenv("TELEGRAM_API_HASH", ""7ced3ee4c80117bd5138410811b91f9f")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI(title="Telegram Ultra Adder")
