@@ -240,42 +240,92 @@ async def start_adding(req: AddMembersRequest):
 # ==========================================
 # 5. محرك السحب والإضافة الفعلي
 # ==========================================
-async def run_real_adding_process(accounts, source, target):
-    for acc in accounts:
+# ==========================================
+# محرك سحب وإضافة الأعضاء المتطور (Dragon System Engine)
+# ==========================================
+async def run_multi_account_engine(accounts_data, source, target):
+    if not accounts_data:
+        return
+
+    target_users = {} # استخدام Dict لمنع تكرار الأعضاء
+    first_acc = accounts_data[0]
+    master_client = TelegramClient(StringSession(first_acc["session_string"]), API_ID, API_HASH)
+    
+    try:
+        await master_client.connect()
+        src_entity = await master_client.get_entity(source)
+
+        # 1. طريقتان للسحب كـ Dragon: السحب العادي + سحب المتفاعلين في الجروب
+        try:
+            # السحب المباشر
+            participants = await master_client.get_participants(src_entity, limit=2000)
+            for u in participants:
+                if not u.bot and not u.deleted:
+                    target_users[u.id] = u
+        except Exception:
+            print("الجروب مخفي الأعضاء.. الانتقال لنظام سحب المتفاعلين (Dragon Mode)...")
+
+        # 2. سحب المتفاعلين من آخر الرسائل (يعمل حتى لو الأعضاء مخفيين!)
+        async for message in master_client.iter_messages(src_entity, limit=300):
+            if message.sender_id and message.sender:
+                if not getattr(message.sender, 'bot', False) and not getattr(message.sender, 'deleted', False):
+                    target_users[message.sender_id] = message.sender
+
+    except Exception as e:
+        print(f"خطأ أثناء جلب البيانات: {e}")
+        return
+    finally:
+        await master_client.disconnect()
+
+    user_list = list(target_users.values())
+    if not user_list:
+        print("لم يتم العثور على أعضاء قابلين للسحب.")
+        return
+
+    user_index = 0
+    total_users = len(user_list)
+
+    # 3. التناوب بين كافة الحسابات المربوطة للإضافة
+    for acc in accounts_data:
+        if user_index >= total_users:
+            break
+
         client = TelegramClient(StringSession(acc["session_string"]), API_ID, API_HASH)
+        added_by_this_account = 0
+        MAX_PER_ACCOUNT = 40 # الحد الذهبي لنظام الدراجون
+
         try:
             await client.connect()
             if not await client.is_user_authorized():
                 continue
 
-            src_entity = await client.get_entity(source)
+            # انضمام تلقائي للجروب الهدف إن لم يكن الحساب عضواً فيه
             trg_entity = await client.get_entity(target)
 
-            # سحب الأعضاء
-            participants = await client.get_participants(src_entity, limit=100)
-
-            added_count = 0
-            for user in participants:
-                if user.bot or user.deleted:
-                    continue
+            while added_by_this_account < MAX_PER_ACCOUNT and user_index < total_users:
+                user_to_add = user_list[user_index]
+                user_index += 1
 
                 try:
-                    # إضافة العضو للجروب Target
-                    await client(InviteToChannelRequest(trg_entity, [user]))
-                    added_count += 1
+                    # إضافة العضو باستخدام ID مباشر لتفادي مشاكل الإيموجي والرموز
+                    await client(InviteToChannelRequest(trg_entity, [user_to_add]))
+                    added_by_this_account += 1
                     
-                    # فاصل زمني 15 ثانية لحماية الحساب من الحظر
-                    await asyncio.sleep(5)
+                    # فاصل زمني آمن للتخفي عن الخوارزميات (12 ثانية)
+                    await asyncio.sleep(12)
 
-                    if added_count >= 50:
-                        break
-
-                except Exception as add_error:
-                    if "FLOOD" in str(add_error).upper():
-                        break
+                except (PeerFloodError, FloodWaitError):
+                    print(f"الحساب {acc['phone']} وصل للحد المؤقت، جاري التبديل للحساب التالي...")
+                    break
+                except UserPrivacyRestrictedError:
+                    continue # تجاوز المحظور خصوصيتهم
+                except Exception as ex:
+                    print(f"خطأ في إضافة العضو: {ex}")
                     continue
 
-        except Exception as e:
-            print(f"Error: {e}")
+        except Exception as acc_err:
+            print(f"خطأ في الجلسة: {acc_err}")
         finally:
             await client.disconnect()
+            
+        await asyncio.sleep(3)
