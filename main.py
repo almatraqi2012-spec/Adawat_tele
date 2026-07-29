@@ -25,7 +25,7 @@ API_HASH = os.getenv("TELEGRAM_API_HASH", "7ced3ee4c80117bd5138410811b91f9f")
 OXAPAY_MERCHANT_KEY = os.getenv("OXAPAY_MERCHANT_KEY", "VVWSV1-17YEGL-05LITH-PLZ5EX")
 ADMIN_TELEGRAM_BOT_TOKEN = os.getenv("ADMIN_TELEGRAM_BOT_TOKEN", "8725004596:AAF7fH3qyLq4nhRRp3RIbVGQj8bMo632oM8")  # توكن بوت الإشعارات
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "6016547718")              # آيدي حسابك في التلغرام
-BOT_USERNAME = os.getenv("BOT_USERNAME", "@Shrkatbot")                    # يوزر بوتك بدون @
+BOT_USERNAME = os.getenv("BOT_USERNAME", "Shrkatbot")                    # يوزر بوتك بدون @
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI(title="Dragon Engine - System Management")
