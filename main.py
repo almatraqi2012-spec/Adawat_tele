@@ -301,8 +301,16 @@ async def serve_dashboard():
 
             function redirectToBot() {{
                 const botUsername = "{BOT_USERNAME}";
-                const text = encodeURIComponent(`سلام عليكم، تم سداد الاشتراك يدوي عبر USDT.\\nبياناتي للتفعيل:\\n- المعرف: ${{USER_ID}}\\n- الاسم: ${{localStorage.getItem("user_full_name")}}\\n- المعرف/الرقم: ${{localStorage.getItem("user_contact")}}`);
-                window.open(`https://t.me/${{botUsername}}?start=pay_${{USER_ID}}`, '_blank');
+                const startParam = `pay_${{USER_ID}}`;
+                
+                const directAppUrl = `tg://resolve?domain=${{botUsername}}&start=${{startParam}}`;
+                const webUrl = `https://t.me/${{botUsername}}?start=${{startParam}}`;
+
+                window.location.href = directAppUrl;
+
+                setTimeout(function() {{
+                    window.open(webUrl, '_blank');
+                }}, 500);
             }}
 
             function showStatus(msg, isError = false) {{
