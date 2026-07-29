@@ -9,9 +9,9 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.tl.functions.channels import InviteToChannelRequest
+from telethon.tl.functions.channels import InviteToChannelRequest, JoinChannelRequest
 from telethon.tl.types import UserStatusRecently, UserStatusOnline
-from telethon.errors import PeerFloodError, UserPrivacyRestrictedError, FloodWaitError
+from telethon.errors import PeerFloodError, UserPrivacyRestrictedError, FloodWaitError, UserNotMutualContactError, UserIdInvalidError
 from supabase import create_client, Client
 
 # ==========================================
@@ -223,35 +223,49 @@ async def serve_dashboard():
             let phoneHash = "";
 
             async function submitRegister() {{
-                const fullName = document.getElementById("regFullName").value.trim();
-                const contact = document.getElementById("regUserContact").value.trim();
+                const fullNameInput = document.getElementById("regFullName");
+                const contactInput = document.getElementById("regUserContact");
 
-                if(!fullName || !contact) return alert("يرجى إدخال جميع البيانات المطلوب التسجيل بها");
+                const fullName = fullNameInput ? fullNameInput.value.trim() : "";
+                const contact = contactInput ? contactInput.value.trim().toLowerCase() : "";
+
+                if (!fullName || !contact) {{
+                    return alert("يرجى إدخال اسمك واسم المستخدم/الرقم بشكل صحيح");
+                }}
 
                 try {{
+                    showStatus("جاري البحث عن الحساب واستعادة البيانات...");
+                    
                     const res = await fetch("/api/register-user", {{
                         method: "POST",
-                        headers: {{"Content-Type": "application/json"}},
-                        body: JSON.stringify({{full_name: fullName, username_or_phone: contact}})
+                        headers: {{ "Content-Type": "application/json" }},
+                        body: JSON.stringify({{
+                            full_name: fullName,
+                            username_or_phone: contact
+                        }})
                     }});
 
                     const data = await res.json();
-                    if(res.ok && data.user_id) {{
+                    
+                    if (res.ok && data.user_id) {{
                         localStorage.setItem("user_device_id", data.user_id);
                         localStorage.setItem("user_full_name", fullName);
                         localStorage.setItem("user_contact", contact);
+                        
                         USER_ID = data.user_id;
 
                         document.getElementById("registerModal").style.display = "none";
                         document.getElementById("displayUserName").innerText = fullName;
                         
-                        checkSub();
-                        updateCount();
+                        await checkSub();
+                        await updateCount();
+
+                        alert(data.message || "تم تسجيل الدخول بنجاح!");
                     }} else {{
-                        alert("حدث خطأ: " + (data.detail || "تعذر التسجيل"));
+                        alert("خطأ: " + (data.detail || "تعذر التسجيل"));
                     }}
-                }} catch(err) {{
-                    alert("تعذر الاتصال بالسيرفر، حاول مجدداً.");
+                }} catch (err) {{
+                    alert("تعذر الاتصال بالسيرفر، تأكد من الاتصال بالإنترنت.");
                 }}
             }}
 
@@ -372,7 +386,7 @@ async def serve_dashboard():
 
                 if(!source || !target) return alert("يرجى وضع روابط المجموعات المصدر والهدف");
 
-                showStatus("🔥 تم إطلاق المحرك الخارق! العمل جارٍ في الخلفية بجميع الحسابات بالتوازي...");
+                showStatus("🚀 تم إطلاق الحملة! الحسابات تعمل الآن بالخلفية وتضيف الأعضاء لجروبك الحقيقي...");
                 const res = await fetch("/api/start-adding", {{
                     method: "POST",
                     headers: {{"Content-Type": "application/json"}},
@@ -397,15 +411,28 @@ async def serve_dashboard():
 @app.post("/api/register-user")
 async def register_user(req: RegisterUserRequest):
     try:
-        existing = supabase.table("users1").select("user_id").eq("username_or_phone", req.username_or_phone).execute()
-        if existing.data:
-            return {"status": "success", "user_id": existing.data[0]["user_id"], "message": "تم استعادة الحساب بنجاح!"}
+        clean_contact = req.username_or_phone.strip().lower()
+        clean_name = req.full_name.strip()
+
+        if not clean_contact or not clean_name:
+            raise HTTPException(status_code=400, detail="يرجى إدخال البيانات بشكل صحيح")
+
+        existing = supabase.table("users1").select("user_id").eq("username_or_phone", clean_contact).execute()
+        
+        if existing.data and len(existing.data) > 0:
+            user_id = existing.data[0]["user_id"]
+            return {
+                "status": "success", 
+                "user_id": user_id, 
+                "message": "مرحباً بعودتك! تم استعادة حسابك واشتراكك بنجاح 🟢"
+            }
 
         user_id = 'user_' + uuid.uuid4().hex[:9]
+        
         supabase.table("users1").insert({
             "user_id": user_id,
-            "full_name": req.full_name,
-            "username_or_phone": req.username_or_phone
+            "full_name": clean_name,
+            "username_or_phone": clean_contact
         }).execute()
 
         supabase.table("users_subscriptions").insert({
@@ -413,8 +440,10 @@ async def register_user(req: RegisterUserRequest):
             "is_active": False
         }).execute()
 
-        send_telegram_notification(f"🚨 <b>مشترك جديد ينضم للخدمة!</b>\n👤 الاسم: {req.full_name}\n📞 التواصل: {req.username_or_phone}\n🆔 المعرف: <code>{user_id}</code>")
-        return {"status": "success", "user_id": user_id}
+        send_telegram_notification(f"🚨 <b>مشترك جديد ينضم للخدمة!</b>\n👤 الاسم: {clean_name}\n📞 التواصل: {clean_contact}\n🆔 المعرف: <code>{user_id}</code>")
+        
+        return {"status": "success", "user_id": user_id, "message": "تم إنشاء الحساب بنجاح!"}
+        
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -520,62 +549,64 @@ async def start_adding(req: AddMembersRequest):
     if not accounts.data:
         raise HTTPException(status_code=400, detail="لا توجد حسابات مربوطة في أسطولك.")
 
-    # تشغيل المحرك في الخلفية بدون حجب الاستجابة
+    # تشغيل المحرك الحقيقي فوراً بالخلفية
     asyncio.create_task(run_heavy_duty_engine(accounts.data, req.source_group, req.target_group))
-    return {"status": "success", "message": f"🚀 تم تشغيل المحرك الخارق بنجاح بـ ({len(accounts.data)}) حساب بالتوازي!"}
+    return {"status": "success", "message": f"⚡ تم البدء بالفعل عبر ({len(accounts.data)}) حساب! الأعضاء يضافون الآن لجروبك."}
 
 # ==========================================
-# 6. المحرك الخارق المتوازي (Heavy Duty Engine)
+# 6. المحرك الخارق المصحح كلياً (Real Working Engine)
 # ==========================================
 
-async def worker_add_process(account_data, user_queue, target_group):
-    """عامل متوازي يعمل لكل حساب بشكل مستقل ومستمر"""
+async def worker_add_process(account_data, users_to_add, target_group):
     phone = account_data["phone"]
     client = TelegramClient(StringSession(account_data["session_string"]), API_ID, API_HASH)
     
     try:
         await client.connect()
         if not await client.is_user_authorized():
+            print(f"[{phone}] ❌ الحساب غير مفعل أو تم تسجيل الخروج منه")
             return
 
+        # الانضمام للجروب الهدف لضمان إمكانية الإضافة
+        try:
+            trg_entity = await client.get_entity(target_group)
+            await client(JoinChannelRequest(trg_entity))
+        except Exception:
+            pass
+
         trg_entity = await client.get_entity(target_group)
-        added_count = 0
-        MAX_ADD_PER_ACC = 40  # أقصى حد أمن لكل حساب في الحملة الواحدة
+        added_success = 0
 
-        while added_count < MAX_ADD_PER_ACC and not user_queue.empty():
-            user_to_add = await user_queue.get()
-
+        for user_id in users_to_add:
             try:
-                await client(InviteToChannelRequest(trg_entity, [user_to_add]))
-                added_count += 1
+                user_obj = await client.get_input_entity(user_id)
+                await client(InviteToChannelRequest(trg_entity, [user_obj]))
+                added_success += 1
+                print(f"[{phone}] ✅ تم إضافة العضو {user_id} بنجاح! (الإجمالي: {added_success})")
                 
-                # وقت انتظار عشوائي لمنع اكتشاف الـ Bot (بين 18 و 35 ثانية)
-                delay = random.randint(8, 20)
-                await asyncio.sleep(delay)
+                # تأخير بين الإضافات للحفاظ على الحساب
+                await asyncio.sleep(random.randint(12, 25))
 
             except UserPrivacyRestrictedError:
-                # المستخدم واضع إعدادات خصوصية - تخطي فوراً
-                pass
-            except (PeerFloodError, FloodWaitError):
-                # الحساب تلقى حظراً مؤقتاً - التوقف بهدوء لحماية الرقم
+                print(f"[{phone}] ⚠️ العضو {user_id} يغلق خصوصية الإضافة")
+            except (PeerFloodError, FloodWaitError) as e:
+                print(f"[{phone}] 🛑 تم حظر الحساب مؤقتاً بواسطة التليجرام: {e}")
                 break
-            except Exception:
-                pass
-            finally:
-                user_queue.task_done()
+            except (UserNotMutualContactError, UserIdInvalidError):
+                continue
+            except Exception as e:
+                print(f"[{phone}] ❌ خطأ إضافة {user_id}: {e}")
 
     except Exception as e:
-        print(f"Worker Error [{phone}]: {e}")
+        print(f"[{phone}] 💥 خطأ في الحساب: {e}")
     finally:
         await client.disconnect()
 
 async def run_heavy_duty_engine(accounts_data, source_group, target_group):
-    """المحرك الرئيسي: السحب والفلترة ثم التوزيع المتوازي"""
     if not accounts_data:
         return
 
-    # 1. سحب وتنقية الأعضاء عبر الحساب الأول
-    target_users = {}
+    scraped_user_ids = []
     master_acc = accounts_data[0]
     master_client = TelegramClient(StringSession(master_acc["session_string"]), API_ID, API_HASH)
     
@@ -583,45 +614,42 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
         await master_client.connect()
         src_entity = await master_client.get_entity(source_group)
 
-        # سحب وتصفيّة الأعضاء النشطين فقط
+        # 1. سحب الأعضاء النشطين
         try:
-            participants = await master_client.get_participants(src_entity, limit=3000)
+            participants = await master_client.get_participants(src_entity, limit=1000)
             for u in participants:
                 if not u.bot and not u.deleted:
-                    # شرط الفلترة الخارقة: إضافة من كان متصلاً مؤخراً فقط
                     if isinstance(u.status, (UserStatusRecently, UserStatusOnline)):
-                        target_users[u.id] = u
-        except Exception:
-            pass
+                        scraped_user_ids.append(u.id)
+        except Exception as e:
+            print(f"خطأ أثناء سحب الأعضاء بالكامل: {e}")
 
-        # سحب النشطين عبر الرسائل كخطة B
-        if len(target_users) < 100:
-            async for message in master_client.iter_messages(src_entity, limit=400):
-                if message.sender_id and message.sender:
-                    u = message.sender
-                    if not getattr(u, 'bot', False) and not getattr(u, 'deleted', False):
-                        target_users[message.sender_id] = u
+        # 2. خطة بديلة للسحب عبر الرسائل
+        if len(scraped_user_ids) < 50:
+            async for message in master_client.iter_messages(src_entity, limit=300):
+                if message.sender_id and message.sender_id not in scraped_user_ids:
+                    scraped_user_ids.append(message.sender_id)
 
     except Exception as e:
-        print(f"Master Scrape Error: {e}")
+        print(f"💥 خطأ السحب الرئيسي: {e}")
         return
     finally:
         await master_client.disconnect()
 
-    user_list = list(target_users.values())
-    if not user_list:
+    if not scraped_user_ids:
+        print("❌ لم يتم العثور على أي أعضاء قابلين للسحب!")
         return
 
-    # 2. تحضير طابور المهام (Queue)
-    user_queue = asyncio.Queue()
-    for user in user_list:
-        await user_queue.put(user)
+    print(f"🔥 تم سحب {len(scraped_user_ids)} عضو بنجاح! جاري التوزيع على الحسابات...")
 
-    # 3. إطلاق الحسابات بالكامل بالتوازي عبر asyncio.gather
-    workers = [
-        worker_add_process(acc, user_queue, target_group) 
-        for acc in accounts_data
-    ]
+    # 3. تقسيم الأعضاء على الحسابات بالتساوي للتنفيذ المباشر
+    num_accounts = len(accounts_data)
+    chunk_size = len(scraped_user_ids) // num_accounts + 1
     
-    # تشغيل الجميع في وقت واحد
-    await asyncio.gather(*workers)
+    tasks = []
+    for i, acc in enumerate(accounts_data):
+        assigned_users = scraped_user_ids[i * chunk_size : (i + 1) * chunk_size]
+        if assigned_users:
+            tasks.append(worker_add_process(acc, assigned_users, target_group))
+
+    await asyncio.gather(*tasks)
