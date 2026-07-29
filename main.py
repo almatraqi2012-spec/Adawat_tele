@@ -216,7 +216,7 @@ async def verify_code(req: VerifyRequest):
         # حفظ الجلسة باسم المستخدم الآلي تلقائياً
         supabase.table("telegram_accounts").insert({
             "user_id": req.user_id,
-            "phone_number": req.phone_number,
+            "phone": req.phone_number,
             "session_string": final_session
         }).execute()
 
