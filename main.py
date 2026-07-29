@@ -1,5 +1,6 @@
 import os
 import asyncio
+import uuid
 import requests
 from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, HTTPException, Request
@@ -24,6 +25,7 @@ API_HASH = os.getenv("TELEGRAM_API_HASH", "7ced3ee4c80117bd5138410811b91f9f")
 OXAPAY_MERCHANT_KEY = os.getenv("OXAPAY_MERCHANT_KEY", "VVWSV1-17YEGL-05LITH-PLZ5EX")
 ADMIN_TELEGRAM_BOT_TOKEN = os.getenv("ADMIN_TELEGRAM_BOT_TOKEN", "8725004596:AAF7fH3qyLq4nhRRp3RIbVGQj8bMo632oM8")  # توكن بوت الإشعارات
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "6016547718")              # آيدي حسابك في التلغرام
+BOT_USERNAME = os.getenv("BOT_USERNAME", "@Shrkatbot")                    # يوزر بوتك بدون @
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI(title="Dragon Engine - System Management")
@@ -226,32 +228,35 @@ async def serve_dashboard():
                 const fullName = document.getElementById("regFullName").value.trim();
                 const contact = document.getElementById("regUserContact").value.trim();
 
-                if(!fullName || !contact) return alert("يرجى ملء جميع البيانات المطلوب التسجيل بها");
-
-                if (!USER_ID) {{
-                    USER_ID = 'user_' + Math.random().toString(36).substr(2, 9);
-                    localStorage.setItem("user_device_id", USER_ID);
+                if(!fullName || !contact) {{
+                    return alert("يرجى ملء جميع البيانات المطلوب التسجيل بها");
                 }}
 
-                const res = await fetch("/api/register-user", {{
-                    method: "POST",
-                    headers: {{"Content-Type": "application/json"}},
-                    body: JSON.stringify({{full_name: fullName, username_or_phone: contact}})
-                }});
+                try {{
+                    const res = await fetch("/api/register-user", {{
+                        method: "POST",
+                        headers: {{"Content-Type": "application/json"}},
+                        body: JSON.stringify({{full_name: fullName, username_or_phone: contact}})
+                    }});
 
-                const data = await res.json();
-                if(res.ok) {{
-                    localStorage.setItem("user_device_id", data.user_id);
-                    localStorage.setItem("user_full_name", fullName);
-                    localStorage.setItem("user_contact", contact);
-                    USER_ID = data.user_id;
+                    const data = await res.json();
+                    if(res.ok && data.user_id) {{
+                        localStorage.setItem("user_device_id", data.user_id);
+                        localStorage.setItem("user_full_name", fullName);
+                        localStorage.setItem("user_contact", contact);
+                        USER_ID = data.user_id;
 
-                    document.getElementById("registerModal").style.display = "none";
-                    document.getElementById("displayUserName").innerText = fullName;
-                    checkSub();
-                    updateCount();
-                }} else {{
-                    alert("حدث خطأ أثناء التسجيل");
+                        document.getElementById("registerModal").style.display = "none";
+                        document.getElementById("displayUserName").innerText = fullName;
+                        
+                        checkSub();
+                        updateCount();
+                    }} else {{
+                        alert("حدث خطأ في السيرفر: " + (data.detail || "تأكد من إيقاف RLS لجدول users1"));
+                    }}
+                }} catch(err) {{
+                    console.error("Fetch Error:", err);
+                    alert("تعذر الاتصال بالسيرفر، يرجى المحاولة مرة أخرى.");
                 }}
             }}
 
@@ -295,7 +300,7 @@ async def serve_dashboard():
             }}
 
             function redirectToBot() {{
-                const botUsername = "YOUR_BOT_USERNAME"; // استبدله بـ يوزر البوت الخاص بك بدون @
+                const botUsername = "{BOT_USERNAME}";
                 const text = encodeURIComponent(`سلام عليكم، تم سداد الاشتراك يدوي عبر USDT.\\nبياناتي للتفعيل:\\n- المعرف: ${{USER_ID}}\\n- الاسم: ${{localStorage.getItem("user_full_name")}}\\n- المعرف/الرقم: ${{localStorage.getItem("user_contact")}}`);
                 window.open(`https://t.me/${{botUsername}}?start=pay_${{USER_ID}}`, '_blank');
             }}
@@ -392,30 +397,33 @@ async def register_user(req: RegisterUserRequest):
     """تسجيل مشترك جديد وإرسال إشعار فوري للأدمن على التلغرام"""
     user_id = 'user_' + uuid.uuid4().hex[:9]
     
-    # حفظ في جدول المستخدمين
-    supabase.table("users1").insert({
-        "user_id": user_id,
-        "full_name": req.full_name,
-        "username_or_phone": req.username_or_phone
-    }).execute()
+    try:
+        # حفظ في جدول المستخدمين users1
+        supabase.table("users1").insert({
+            "user_id": user_id,
+            "full_name": req.full_name,
+            "username_or_phone": req.username_or_phone
+        }).execute()
 
-    # إنشاء سجل اشتراك غير مفعل تلقائياً
-    supabase.table("users_subscriptions").insert({
-        "user_id": user_id,
-        "is_active": False
-    }).execute()
+        # إنشاء سجل اشتراك غير مفعل تلقائياً
+        supabase.table("users_subscriptions").insert({
+            "user_id": user_id,
+            "is_active": False
+        }).execute()
 
-    # إرسال إشعار للبوت الخاص بك
-    msg = (
-        f"🚨 <b>مشترك جديد قام بالتسجيل!</b>\n\n"
-        f"👤 <b>الاسم:</b> {req.full_name}\n"
-        f"📞 <b>التواصل:</b> {req.username_or_phone}\n"
-        f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
-        f"📌 <b>الحالة:</b> 🔴 غير مفعل (في انتظار الدفع)"
-    )
-    send_telegram_notification(msg)
+        # إرسال إشعار للبوت الخاص بك
+        msg = (
+            f"🚨 <b>مشترك جديد قام بالتسجيل!</b>\n\n"
+            f"👤 <b>الاسم:</b> {req.full_name}\n"
+            f"📞 <b>التواصل:</b> {req.username_or_phone}\n"
+            f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
+            f"📌 <b>الحالة:</b> 🔴 غير مفعل (في انتظار الدفع)"
+        )
+        send_telegram_notification(msg)
 
-    return {"status": "success", "user_id": user_id}
+        return {"status": "success", "user_id": user_id}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/subscription-status")
 async def subscription_status(user_id: str):
