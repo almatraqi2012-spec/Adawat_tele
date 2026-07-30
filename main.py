@@ -615,9 +615,10 @@ async def worker_add_process(account_data, users_to_add, target_group):
 # ==========================================
 # محرك التحدي المطور (يعتمد على Usernames مباشرة)
 # ==========================================
+
 MAX_ADDS_PER_ACCOUNT = 5
 MIN_DELAY = 15
-MAX_DELAY = 35
+MAX_DELAY = 30
 
 async def process_account_queue(acc_data, user_queue, target_entity, api_id, api_hash):
     phone = acc_data.get("phone", "Unknown")
@@ -632,32 +633,39 @@ async def process_account_queue(acc_data, user_queue, target_entity, api_id, api
             print(f"❌ [الحساب {phone}] غير مفعل أو الجلسة ملغاة.")
             return
 
-        # الانضمام التلقائي للهدف
+        # ضمان الانضمام للجروب الهدف أولاً
         try:
             await client(JoinChannelRequest(target_entity))
         except Exception:
             pass
 
         while user_queue and adds_count < MAX_ADDS_PER_ACCOUNT:
-            username = user_queue.pop(0) # التعامل باليوزر نيم بدلاً من ID
+            user_info = user_queue.pop(0)  # يتكون من (user_id, access_hash, username)
+            u_id, u_hash, u_name = user_info
             
             try:
-                # استخدام اليوزر نيم يحل مشكلة UserIdInvalidError كلياً
-                user_obj = await client.get_input_entity(username)
-                await client(InviteToChannelRequest(target_entity, [user_obj]))
+                # 1. تحديد طريقة الإضافة: عبر Username إن وجد، أو عبر InputUser المباشر
+                if u_name:
+                    user_to_add = u_name
+                else:
+                    # استخدام الهيكل الكامل للـ ID مع الـ access_hash لتجاوز خطأ Invalid ID
+                    user_to_add = await client.get_input_entity(u_id)
+
+                # 2. تنفيذ الإضافة المباشرة
+                await client(InviteToChannelRequest(target_entity, [user_to_add]))
                 adds_count += 1
-                print(f"✅ [الحساب {phone}] تم إضافة العضو @{username} بنجاح! ({adds_count}/{MAX_ADDS_PER_ACCOUNT})")
+                print(f"✅ [الحساب {phone}] تم إضافة العضو ({u_name or u_id}) بنجاح! ({adds_count}/{MAX_ADDS_PER_ACCOUNT})")
                 
                 await asyncio.sleep(random.randint(MIN_DELAY, MAX_DELAY))
 
             except UserPrivacyRestrictedError:
-                print(f"⚠️ [الحساب {phone}] العضو @{username} غالق للخصوصية.")
+                print(f"⚠️ [الحساب {phone}] العضو ({u_name or u_id}) مغلق الخصوصية.")
             except (PeerFloodError, FloodWaitError) as e:
-                print(f"🛑 [الحساب {phone}] محظور من الإضافة حالياً (PeerFlood): {e}")
-                user_queue.insert(0, username)
+                print(f"🛑 [الحساب {phone}] الحساب محظور حالياً من الإضافة (PeerFlood). يتم إرجاع العضو للقائمة.")
+                user_queue.insert(0, user_info)
                 break
             except Exception as e:
-                print(f"⚠️ [الحساب {phone}] تعذر إضافة @{username}: {e}")
+                print(f"⚠️ [الحساب {phone}] تعذر إضافة العضو ({u_name or u_id}): {e}")
 
     except Exception as e:
         print(f"💥 [الحساب {phone}] خطأ بالجلسة: {e}")
@@ -673,7 +681,7 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
     trg_clean = target_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
 
-    scraped_usernames = []
+    scraped_users = []  # ستخزن التوبل (id, access_hash, username)
     master_acc = accounts_data[0]
     master_client = TelegramClient(StringSession(master_acc["session_string"]), API_ID, API_HASH)
 
@@ -691,13 +699,13 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
 
         trg_entity = await master_client.get_entity(trg_clean)
 
-        # سحب الأعضاء الذين يمتلكون Username فقط لضمان وصول باقي الحسابات لهم
-        print("🔍 سحب الأعضاء الذين يملكون معرفات (Usernames)...")
+        print("🔍 سحب جميع الأعضاء النشطين (سواء لديهم معرف أو بالـ ID)...")
         participants = await master_client.get_participants(src_entity, limit=1000)
+        
         for u in participants:
-            if not u.bot and not u.deleted and u.username:
-                if u.status is None or isinstance(u.status, (UserStatusRecently, UserStatusOnline)):
-                    scraped_usernames.append(u.username)
+            if not u.bot and not u.deleted:
+                # حفظ البيانات الكاملة لتسهيل التعرف على العضو من الجلسات الأخرى
+                scraped_users.append((u.id, u.access_hash, u.username))
 
     except Exception as e:
         print(f"💥 خطأ السحب الرئيسي: {e}")
@@ -705,17 +713,17 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     finally:
         await master_client.disconnect()
 
-    if not scraped_usernames:
-        print("❌ لم يتم العثور على أعضاء يملكون معرفات علنية (Usernames) في المجموعة المصدر!")
+    if not scraped_users:
+        print("❌ لم يتم العثور على أي أعضاء في المجموعة المصدر!")
         return
 
-    print(f"🔥 تم سحب {len(scraped_usernames)} معرف جاهز للإضافة! بدء تشغيل الأسطول...")
+    print(f"🔥 تم سحب {len(scraped_users)} عضو (بالـ ID والمعرفات)! بدء تشغيل الأسطول...")
 
-    user_queue = list(scraped_usernames)
+    user_queue = list(scraped_users)
     tasks = []
     for acc in accounts_data:
         if user_queue:
             tasks.append(process_account_queue(acc, user_queue, trg_clean, API_ID, API_HASH))
 
     await asyncio.gather(*tasks)
-    print("🎉 انتهت المحاولة!")
+    print("🎉 انتهت المهمة الشاملة!")
