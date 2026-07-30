@@ -612,23 +612,37 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     
     try:
         await master_client.connect()
-        src_entity = await master_client.get_entity(source_group)
+        
+        # 1. الانضمام التلقائي للمجموعة المصدر
+        try:
+            src_entity = await master_client.get_entity(source_group)
+            await master_client(JoinChannelRequest(src_entity))
+            print("✅ تم الانضمام للمجموعة المصدر بنجاح.")
+        except Exception as e:
+            print(f"⚠️ تنبيه الانضمام للمصدر: {e}")
+            src_entity = await master_client.get_entity(source_group)
 
-        # 1. سحب الأعضاء النشطين مع التحقق الآمن من حالة الظهور
+        # 2. الانضمام التلقائي للمجموعة الهدف
+        try:
+            trg_entity = await master_client.get_entity(target_group)
+            await master_client(JoinChannelRequest(trg_entity))
+            print("✅ تم الانضمام للمجموعة الهدف بنجاح.")
+        except Exception as e:
+            print(f"⚠️ تنبيه الانضمام للهدف: {e}")
+
+        # 3. سحب الأعضاء النشطين
         try:
             participants = await master_client.get_participants(src_entity, limit=1000)
             for u in participants:
                 if not u.bot and not u.deleted:
-                    # التحقق الآمن من الحالات النشطة بدون الأخطاء المتعلقة بـ status
                     if u.status is not None and isinstance(u.status, (UserStatusRecently, UserStatusOnline)):
                         scraped_user_ids.append(u.id)
                     elif u.status is None:
-                        # إضافة احتياطية للأعضاء الذين تمت قراءتهم بدون حالة صريحة
                         scraped_user_ids.append(u.id)
         except Exception as e:
             print(f"خطأ أثناء سحب الأعضاء بالكامل: {e}")
 
-        # 2. خطة بديلة للسحب عبر تفاعلات الرسائل
+        # خطة بديلة للسحب عبر تفاعلات الرسائل إذا كانت القائمة مخفية
         if len(scraped_user_ids) < 50:
             async for message in master_client.iter_messages(src_entity, limit=300):
                 if message.sender_id and message.sender_id not in scraped_user_ids:
@@ -646,7 +660,7 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
 
     print(f"🔥 تم سحب {len(scraped_user_ids)} عضو بنجاح! جاري التوزيع على الحسابات...")
 
-    # 3. تقسيم الأعضاء على الحسابات بالتساوي للتنفيذ المباشر
+    # 4. تقسيم الأعضاء على الحسابات بالتساوي وتمرير المجموعتين
     num_accounts = len(accounts_data)
     chunk_size = len(scraped_user_ids) // num_accounts + 1
     
