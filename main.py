@@ -205,6 +205,7 @@ async def serve_dashboard():
                 <label>كود التحقق الواصل للتليجرام:</label>
                 <input type="text" id="otpCode" placeholder="12345">
                 <button onclick="verifyCode()" class="btn-green">ربط الرقم بالأسطول 🛡️</button>
+                <button onclick="deleteAccount('05XXXXXXXX')" class="bg-red-600 text-white px-2 py-1 rounded text-xs">حذف</button>
             </div>
             
             <hr>
