@@ -672,44 +672,53 @@ async def process_account_queue(acc_data, user_queue, target_entity, api_id, api
 
 async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     """
-    المحرك الرئيسي المطور (بديل المحرك القديم بنفس الاسم لتجنب تعديل المسارات)
+    المحرك الرئيسي المطور والمنظف للروابط لضمان التنفيذ الفعلي
     """
     if not accounts_data:
         print("❌ لا توجد حسابات مضافة في الأسطول.")
         return
 
+    # 1. تنظيف الروابط تلقائياً لحل مشكلة السحب الصفري
+    src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
+    trg_clean = target_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
+
     scraped_user_ids = []
     master_acc = accounts_data[0]
     master_client = TelegramClient(StringSession(master_acc["session_string"]), API_ID, API_HASH)
 
-    print("🚀 جاري الاتصال بالحساب الرئيسي لبدء سحب الأعضاء النشطين...")
+    print(f"🚀 جاري الاتصال بالحساب الرئيسي ({master_acc.get('phone', 'Master')})...")
     try:
         await master_client.connect()
-        
-        # 1. الانضمام للمصدر والهدف
-        src_entity = await master_client.get_entity(source_group)
-        try:
-            await master_client(JoinChannelRequest(src_entity))
-        except Exception:
-            pass
-            
-        trg_entity = await master_client.get_entity(target_group)
-        try:
-            await master_client(JoinChannelRequest(trg_entity))
-        except Exception:
-            pass
+        if not await master_client.is_user_authorized():
+            print("❌ الجلسة الخاصة بالحساب الرئيسي منتهية أو غير موثقة!")
+            return
 
-        # 2. الفلترة الفائقة: سحب الأعضاء النشطين جداً فقط
-        print("🔍 جاري فلترة وسحب الأعضاء المتواجدين مؤخراً...")
+        # 2. الانضمام وجلب الكيانات بالأسماء المنظفة
+        try:
+            src_entity = await master_client.get_entity(src_clean)
+            await master_client(JoinChannelRequest(src_entity))
+        except Exception as e:
+            print(f"⚠️ تنبيه الجروب المصدر: {e}")
+            src_entity = await master_client.get_entity(src_clean)
+
+        try:
+            trg_entity = await master_client.get_entity(trg_clean)
+            await master_client(JoinChannelRequest(trg_entity))
+        except Exception as e:
+            print(f"⚠️ تنبيه الجروب الهدف: {e}")
+            trg_entity = await master_client.get_entity(trg_clean)
+
+        # 3. سحب الأعضاء النشطين
+        print("🔍 جاري سحب وفلترة الأعضاء النشطين...")
         participants = await master_client.get_participants(src_entity, limit=1000)
         for u in participants:
             if not u.bot and not u.deleted:
                 if u.status is None or isinstance(u.status, (UserStatusRecently, UserStatusOnline)):
                     scraped_user_ids.append(u.id)
 
-        # خطة بديلة للسحب عبر تفاعلات الرسائل
-        if len(scraped_user_ids) < 50:
-            async for message in master_client.iter_messages(src_entity, limit=300):
+        # خطة بديلة للسحب من الرسائل الأخيرة
+        if len(scraped_user_ids) < 30:
+            async for message in master_client.iter_messages(src_entity, limit=200):
                 if message.sender_id and message.sender_id not in scraped_user_ids:
                     scraped_user_ids.append(message.sender_id)
 
@@ -720,19 +729,18 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
         await master_client.disconnect()
 
     if not scraped_user_ids:
-        print("❌ لم يتم العثور على أعضاء قابلين للإضافة.")
+        print("❌ لم يتم العثور على أي أعضاء قابليين للإضافة أو الجروب مغلق.")
         return
 
-    print(f"🔥 تم سحب وفلترة {len(scraped_user_ids)} عضو بنجاح!")
-    print(f"🛡️ بدء تدوير الأسطول على ({len(accounts_data)}) حساب بفاصل أمان حقيقي...")
+    print(f"🔥 تم سحب {len(scraped_user_ids)} عضو! بدء تدوير الأسطول...")
 
-    # 3. قائمة التدوير المشتركة بين الحسابات
+    # 4. توزيع طابور الأعضاء بين الجلسات المتاحة
     user_queue = list(scraped_user_ids)
     
     tasks = []
     for acc in accounts_data:
         if user_queue:
-            tasks.append(process_account_queue(acc, user_queue, trg_entity, API_ID, API_HASH))
+            tasks.append(process_account_queue(acc, user_queue, trg_clean, API_ID, API_HASH))
 
     await asyncio.gather(*tasks)
-    print("🎉 انتهت المهمة بنجاح! تم استغلال الأسطول بأقصى كفاءة وحماية.")
+    print("🎉 انتهت المهمة الفعلية للأسطول!")
