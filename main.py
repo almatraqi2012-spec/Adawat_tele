@@ -657,7 +657,7 @@ MAX_ADDS_PER_ACCOUNT = 5
 MIN_DELAY = 15
 MAX_DELAY = 30
 
-async def process_account_queue(acc_data, user_queue, target_clean_name, api_id, api_hash):
+async def process_account_queue(acc_data, user_queue, source_clean_name, target_clean_name, api_id, api_hash):
     phone = acc_data.get("phone", "Unknown")
     session_str = acc_data.get("session_string")
     
@@ -667,7 +667,7 @@ async def process_account_queue(acc_data, user_queue, target_clean_name, api_id,
     try:
         await client.connect()
         
-        # 1. التحقق من توثيق الجلسة (حذف أوتوماتيكي للحسابات الملغاة أو المقيدة كلياً)
+        # 1. التحقق من توثيق الجلسة
         if not await client.is_user_authorized():
             err_msg = f"❌ [حذف تلقائي] الحساب {phone} غير مفعل أو ملغى! جاري مسحه..."
             print(err_msg)
@@ -678,7 +678,14 @@ async def process_account_queue(acc_data, user_queue, target_clean_name, api_id,
                 print(f"خطأ أثناء حذف الحساب من Supabase: {se}")
             return
 
-        # 2. الانضمام إلى الجروب الهدف أولاً
+        # 2. الانضمام إلى الجروب المصدر أولاً (لكسر حظر الغرباء في خوارزميات تليجرام)
+        try:
+            src_entity = await client.get_entity(source_clean_name)
+            await client(JoinChannelRequest(src_entity))
+        except Exception as e:
+            print(f"⚠️ [الحساب {phone}] تعذر الانضمام للجروب المصدر: {e}")
+
+        # 3. الانضمام إلى الجروب الهدف
         try:
             target_entity = await client.get_entity(target_clean_name)
             await client(JoinChannelRequest(target_entity))
@@ -686,17 +693,17 @@ async def process_account_queue(acc_data, user_queue, target_clean_name, api_id,
             send_telegram_notification(f"⚠️ [الحساب {phone}] تعذر الانضمام للجروب Target: {e}")
             return
 
-        # 3. البدء بالإضافة مع معالجة الأخطاء التفصيلية والإشعارات المزدوجة
+        # 4. البدء بالإضافة مع معالجة الأخطاء الذكية
         while user_queue and adds_count < MAX_ADDS_PER_ACCOUNT:
             user_info = user_queue.pop(0)
             u_id, u_hash, u_name = user_info
             
             try:
-                # اعتماد اسم المستخدم أولاً لتفادي اختلال الـ access_hash بين الحسابات الفرعية
+                # جعل الحساب الفرعي يجلب كيان المستخدم بنفسه لتفادي خطأ access_hash
                 if u_name:
-                    user_to_add = u_name
+                    user_to_add = await client.get_input_entity(u_name)
                 else:
-                    user_to_add = InputPeerUser(user_id=u_id, access_hash=u_hash)
+                    user_to_add = await client.get_input_entity(u_id)
 
                 # تنفيذ الإضافة
                 await client(InviteToChannelRequest(target_entity, [user_to_add]))
@@ -706,11 +713,9 @@ async def process_account_queue(acc_data, user_queue, target_clean_name, api_id,
                 group_msg = f"✅ تم إضافة العضو ({u_name or u_id}) بنجاح! 🚀"
                 
                 print(log_msg)
-                
-                # إرسال التنبيه للبوت الخاص بك
                 send_telegram_notification(log_msg)
                 
-                # إرسال التنبيه مباشرة داخل الجروب الهدف ليراه المشترك
+                # إرسال التنبيه داخل الجروب الهدف
                 try:
                     await client.send_message(target_entity, group_msg)
                 except Exception as msg_err:
@@ -720,12 +725,12 @@ async def process_account_queue(acc_data, user_queue, target_clean_name, api_id,
 
             except UserPrivacyRestrictedError:
                 print(f"🔒 [خصوصية] العضو ({u_name or u_id}) يمنع الإضافة من الغرباء.")
-            except (PeerFloodError, FloodWaitError) as e:
+            except (PeerFloodError, FloodWaitError):
                 err_msg = f"🛑 [حظر مؤقت] الحساب {phone} تم إيقافه مؤقتاً بواسطة تليجرام! (FloodWait/PeerFlood)"
                 print(err_msg)
                 send_telegram_notification(err_msg)
                 user_queue.insert(0, user_info)
-                break  # إيقاف هذا الحساب والتنقل للحساب التالي بالأسطول
+                break
             except UserChannelsTooMuchError:
                 print(f"⚠️ العضو ({u_name or u_id}) مشترك في عدد كبير جداً من القنوات.")
             except Exception as e:
@@ -735,7 +740,6 @@ async def process_account_queue(acc_data, user_queue, target_clean_name, api_id,
         print(f"💥 خطأ غير متوقع بالجلسة {phone}: {e}")
     finally:
         await client.disconnect()
-
 
 async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     if not accounts_data:
