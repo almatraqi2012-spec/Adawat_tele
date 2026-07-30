@@ -562,7 +562,21 @@ async def start_adding(req: AddMembersRequest):
     # تشغيل المحرك الحقيقي فوراً بالخلفية
     asyncio.create_task(run_heavy_duty_engine(accounts.data, req.source_group, req.target_group))
     return {"status": "success", "message": f"⚡ تم البدء بالفعل عبر ({len(accounts.data)}) حساب! الأعضاء يضافون الآن لجروبك."}
+class DeleteAccountRequest(BaseModel):
+    user_id: str
+    phone_number: str
 
+@app.post("/api/delete-account")
+async def delete_account(req: DeleteAccountRequest):
+    try:
+        supabase.table("telegram_accounts") \
+            .delete() \
+            .eq("user_id", req.user_id) \
+            .eq("phone", req.phone_number) \
+            .execute()
+        return {"status": "success", "message": f"تم حذف الحساب {req.phone_number} بنجاح!"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 # ==========================================
 # 6. المحرك الخارق المصحح (تجاوز الحظر والقيود الصامتة)
 # ==========================================
@@ -580,11 +594,19 @@ async def process_account_queue(acc_data, user_queue, target_clean_name, api_id,
     
     try:
         await client.connect()
+        
+        # 1. التحقق من توثيق الجلسة (حذف أوتوماتيكي للحسابات الملغاة أو المقيدة كلياً)
         if not await client.is_user_authorized():
-            send_telegram_notification(f"❌ [الحساب {phone}] الجلسة غير منشطة أو ملغاة!")
+            err_msg = f"❌ [حذف تلقائي] الحساب {phone} غير مفعل أو ملغى! جاري مسحه..."
+            print(err_msg)
+            send_telegram_notification(err_msg)
+            try:
+                supabase.table("telegram_accounts").delete().eq("phone", phone).execute()
+            except Exception as se:
+                print(f"خطأ أثناء حذف الحساب من Supabase: {se}")
             return
 
-        # 1. الانضمام إلى الجروب الهدف أولاً
+        # 2. الانضمام إلى الجروب الهدف أولاً
         try:
             target_entity = await client.get_entity(target_clean_name)
             await client(JoinChannelRequest(target_entity))
@@ -592,13 +614,13 @@ async def process_account_queue(acc_data, user_queue, target_clean_name, api_id,
             send_telegram_notification(f"⚠️ [الحساب {phone}] تعذر الانضمام للجروب Target: {e}")
             return
 
-        # 2. البدء بالإضافة مع معالجة الأخطاء التفصيلية
+        # 3. البدء بالإضافة مع معالجة الأخطاء التفصيلية والإشعارات المزدوجة
         while user_queue and adds_count < MAX_ADDS_PER_ACCOUNT:
             user_info = user_queue.pop(0)
             u_id, u_hash, u_name = user_info
             
             try:
-                # استخدام الكيان المناسب للإضافة
+                # اعتماد اسم المستخدم أولاً لتفادي اختلال الـ access_hash بين الحسابات الفرعية
                 if u_name:
                     user_to_add = u_name
                 else:
@@ -609,8 +631,18 @@ async def process_account_queue(acc_data, user_queue, target_clean_name, api_id,
                 adds_count += 1
                 
                 log_msg = f"✅ [نجاح] الحساب {phone} أضاف: ({u_name or u_id}) | Total: {adds_count}"
+                group_msg = f"✅ تم إضافة العضو ({u_name or u_id}) بنجاح! 🚀"
+                
                 print(log_msg)
+                
+                # إرسال التنبيه للبوت الخاص بك
                 send_telegram_notification(log_msg)
+                
+                # إرسال التنبيه مباشرة داخل الجروب الهدف ليراه المشترك
+                try:
+                    await client.send_message(target_entity, group_msg)
+                except Exception as msg_err:
+                    print(f"⚠️ تعذر إرسال الرسالة للجروب Target: {msg_err}")
                 
                 await asyncio.sleep(random.randint(MIN_DELAY, MAX_DELAY))
 
@@ -621,7 +653,7 @@ async def process_account_queue(acc_data, user_queue, target_clean_name, api_id,
                 print(err_msg)
                 send_telegram_notification(err_msg)
                 user_queue.insert(0, user_info)
-                break  # إيقاف هذا الحساب والتنقل للحساب التالي
+                break  # إيقاف هذا الحساب والتنقل للحساب التالي بالأسطول
             except UserChannelsTooMuchError:
                 print(f"⚠️ العضو ({u_name or u_id}) مشترك في عدد كبير جداً من القنوات.")
             except Exception as e:
@@ -648,7 +680,12 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     try:
         await master_client.connect()
         if not await master_client.is_user_authorized():
-            send_telegram_notification("❌ الحساب الرئيسي لسحب الأعضاء غير مفعل!")
+            send_telegram_notification("❌ الحساب الرئيسي لسحب الأعضاء غير مفعل! جاري التخطي للحساب التالي...")
+            # حذف الحساب الرئيسي المقيد تلقائياً من Supabase
+            try:
+                supabase.table("telegram_accounts").delete().eq("phone", master_acc.get("phone")).execute()
+            except Exception:
+                pass
             return
 
         src_entity = await master_client.get_entity(src_clean)
@@ -682,5 +719,20 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
         if user_queue:
             tasks.append(process_account_queue(acc, user_queue, trg_clean, API_ID, API_HASH))
 
+    # تنفيذ متوازي لجميع حسابات الأسطول
     await asyncio.gather(*tasks)
-    send_telegram_notification("🎉 اكتملت العملية بالكامل!")
+    
+    done_msg = "🎉 اكتملت العملية بالكامل بنجاح!"
+    
+    # تنبيه في البوت الخاص بك
+    send_telegram_notification(done_msg)
+    
+    # إرسال تقرير إتمام الحملة للجروب الهدف ليراه المشترك
+    try:
+        report_client = TelegramClient(StringSession(master_acc["session_string"]), API_ID, API_HASH)
+        await report_client.connect()
+        trg_entity = await report_client.get_entity(trg_clean)
+        await report_client.send_message(trg_entity, f"🔥 {done_msg}\nتم إضافة جميع الأعضاء المتاحين بنجاح عبر أسطول الحسابات.")
+        await report_client.disconnect()
+    except Exception as report_err:
+        print(f"تعذر إرسال تقرير النهاية للمجموعة Target: {report_err}")
