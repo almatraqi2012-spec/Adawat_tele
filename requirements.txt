@@ -2,5 +2,5 @@ fastapi
 uvicorn
 telethon
 supabase
-pysocks
 requests
+pydantic
