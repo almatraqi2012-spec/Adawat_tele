@@ -564,12 +564,12 @@ async def start_adding(req: AddMembersRequest):
     return {"status": "success", "message": f"⚡ تم البدء بالفعل عبر ({len(accounts.data)}) حساب! الأعضاء يضافون الآن لجروبك."}
 
 # ==========================================
-# 6. المحرك الخارق المصحح كلياً (Real Working Engine)
+# 6. المحرك الخارق المصحح (تجاوز الحظر والقيود الصامتة)
 # ==========================================
 
 MAX_ADDS_PER_ACCOUNT = 5
-MIN_DELAY = 12
-MAX_DELAY = 25
+MIN_DELAY = 15
+MAX_DELAY = 30
 
 async def process_account_queue(acc_data, user_queue, target_clean_name, api_id, api_hash):
     phone = acc_data.get("phone", "Unknown")
@@ -581,56 +581,61 @@ async def process_account_queue(acc_data, user_queue, target_clean_name, api_id,
     try:
         await client.connect()
         if not await client.is_user_authorized():
-            print(f"❌ [الحساب {phone}] غير مفعل أو الجلسة ملغاة.")
+            send_telegram_notification(f"❌ [الحساب {phone}] الجلسة غير منشطة أو ملغاة!")
             return
 
-        # جلب كيان الجروب الهدف بشكل صحيح داخل الجلسة
+        # 1. الانضمام إلى الجروب الهدف أولاً
         try:
             target_entity = await client.get_entity(target_clean_name)
             await client(JoinChannelRequest(target_entity))
         except Exception as e:
-            print(f"⚠️ [الحساب {phone}] خطأ الوصول للهدف: {e}")
-            try:
-                target_entity = await client.get_entity(target_clean_name)
-            except Exception:
-                return
+            send_telegram_notification(f"⚠️ [الحساب {phone}] تعذر الانضمام للجروب Target: {e}")
+            return
 
+        # 2. البدء بالإضافة مع معالجة الأخطاء التفصيلية
         while user_queue and adds_count < MAX_ADDS_PER_ACCOUNT:
-            user_info = user_queue.pop(0)  # يتكون من (user_id, access_hash, username)
+            user_info = user_queue.pop(0)
             u_id, u_hash, u_name = user_info
             
             try:
-                # طريقة الإضافة المباشرة الفعالة:
+                # استخدام الكيان المناسب للإضافة
                 if u_name:
                     user_to_add = u_name
                 else:
-                    # استخدام InputPeerUser المباشر بالـ ID والهاش المجلوب من الحساب الرئيسي
                     user_to_add = InputPeerUser(user_id=u_id, access_hash=u_hash)
 
+                # تنفيذ الإضافة
                 await client(InviteToChannelRequest(target_entity, [user_to_add]))
                 adds_count += 1
-                print(f"✅ [الحساب {phone}] تم إضافة العضو ({u_name or u_id}) بنجاح! ({adds_count}/{MAX_ADDS_PER_ACCOUNT})")
+                
+                log_msg = f"✅ [نجاح] الحساب {phone} أضاف: ({u_name or u_id}) | Total: {adds_count}"
+                print(log_msg)
+                send_telegram_notification(log_msg)
                 
                 await asyncio.sleep(random.randint(MIN_DELAY, MAX_DELAY))
 
             except UserPrivacyRestrictedError:
-                print(f"⚠️ [الحساب {phone}] العضو ({u_name or u_id}) مغلق الخصوصية.")
+                print(f"🔒 [خصوصية] العضو ({u_name or u_id}) يمنع الإضافة من الغرباء.")
             except (PeerFloodError, FloodWaitError) as e:
-                print(f"🛑 [الحساب {phone}] الحساب محظور حالياً من الإضافة (PeerFlood): {e}")
+                err_msg = f"🛑 [حظر مؤقت] الحساب {phone} تم إيقافه مؤقتاً بواسطة تليجرام! (FloodWait/PeerFlood)"
+                print(err_msg)
+                send_telegram_notification(err_msg)
                 user_queue.insert(0, user_info)
-                break
+                break  # إيقاف هذا الحساب والتنقل للحساب التالي
+            except UserChannelsTooMuchError:
+                print(f"⚠️ العضو ({u_name or u_id}) مشترك في عدد كبير جداً من القنوات.")
             except Exception as e:
-                print(f"⚠️ [الحساب {phone}] تعذر إضافة العضو ({u_name or u_id}): {e}")
+                print(f"❌ [فشل] الحساب {phone} لم يستطع إضافة ({u_name or u_id}): {e}")
 
     except Exception as e:
-        print(f"💥 [الحساب {phone}] خطأ بالجلسة: {e}")
+        print(f"💥 خطأ غير متوقع بالجلسة {phone}: {e}")
     finally:
         await client.disconnect()
 
 
 async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     if not accounts_data:
-        print("❌ لا توجد حسابات مضافة.")
+        send_telegram_notification("❌ لا توجد حسابات مضافة للتشغيل!")
         return
 
     src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
@@ -643,7 +648,7 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     try:
         await master_client.connect()
         if not await master_client.is_user_authorized():
-            print("❌ الحساب الرئيسي غير موثق!")
+            send_telegram_notification("❌ الحساب الرئيسي لسحب الأعضاء غير مفعل!")
             return
 
         src_entity = await master_client.get_entity(src_clean)
@@ -652,7 +657,7 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
         except Exception:
             pass
 
-        print("🔍 جاري سحب الأعضاء النشطين بالكامل...")
+        send_telegram_notification("🔍 جاري سحب الأعضاء النشطين من المجموعة المصدر...")
         participants = await master_client.get_participants(src_entity, limit=1000)
         
         for u in participants:
@@ -660,16 +665,16 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
                 scraped_users.append((u.id, u.access_hash, u.username))
 
     except Exception as e:
-        print(f"💥 خطأ السحب الرئيسي: {e}")
+        send_telegram_notification(f"💥 خطأ أثناء سحب الأعضاء: {e}")
         return
     finally:
         await master_client.disconnect()
 
     if not scraped_users:
-        print("❌ لم يتم العثور على أي أعضاء في المجموعة المصدر!")
+        send_telegram_notification("❌ لم يتم العثور على أعضاء أو الجروب المصدر محمي من السحب!")
         return
 
-    print(f"🔥 تم سحب {len(scraped_users)} عضو! بدء توزيع المهام على الأسطول...")
+    send_telegram_notification(f"🔥 تم سحب ({len(scraped_users)}) عضو بنجاح! جاري التوزيع على الأسطول...")
 
     user_queue = list(scraped_users)
     tasks = []
@@ -678,4 +683,4 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
             tasks.append(process_account_queue(acc, user_queue, trg_clean, API_ID, API_HASH))
 
     await asyncio.gather(*tasks)
-    print("🎉 انتهت الحملة!")
+    send_telegram_notification("🎉 اكتملت العملية بالكامل!")
