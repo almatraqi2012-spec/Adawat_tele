@@ -205,7 +205,14 @@ async def serve_dashboard():
                 <label>كود التحقق الواصل للتليجرام:</label>
                 <input type="text" id="otpCode" placeholder="12345">
                 <button onclick="verifyCode()" class="btn-green">ربط الرقم بالأسطول 🛡️</button>
-                <button onclick="deleteAccount('05XXXXXXXX')" class="bg-red-600 text-white px-2 py-1 rounded text-xs">حذف</button>
+            </div>
+
+            <!-- قائمة الحسابات المضافة + زراير الحذف -->
+            <div style="margin-top: 20px; background: #0f172a; padding: 15px; border-radius: 10px; border: 1px solid #1f2937;">
+                <h3 style="margin-top:0; color: #38bdf8; font-size: 15px;">📱 قائمة أرقام الأسطول المضافة</h3>
+                <div id="accountsList" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+                    <p style="color: #94a3b8; font-size: 13px; text-align: center;">جاري جلب الأرقام...</p>
+                </div>
             </div>
             
             <hr>
@@ -270,6 +277,7 @@ async def serve_dashboard():
                         
                         await checkSub();
                         await updateCount();
+                        await loadAccountsList();
 
                         alert(data.message || "تم تسجيل الدخول بنجاح!");
                     }} else {{
@@ -310,9 +318,59 @@ async def serve_dashboard():
                 }} catch(e){{}}
             }}
 
+            async function loadAccountsList() {{
+                if (!USER_ID) return;
+                const container = document.getElementById("accountsList");
+                try {{
+                    const res = await fetch(`/api/get-accounts?user_id=${{USER_ID}}`);
+                    const data = await res.json();
+                    
+                    if (res.ok && data.accounts && data.accounts.length > 0) {{
+                        container.innerHTML = "";
+                        data.accounts.forEach(acc => {{
+                            const div = document.createElement("div");
+                            div.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155;";
+                            div.innerHTML = `
+                                <span style="font-weight: bold; color: #f8fafc; font-size: 14px;">📱 ${{acc.phone || acc.phone_number}}</span>
+                                <button onclick="deleteAccount('${{acc.phone || acc.phone_number}}')" style="background: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; width: auto; margin: 0;">🗑️ حذف</button>
+                            `;
+                            container.appendChild(div);
+                        }});
+                    }} else {{
+                        container.innerHTML = '<p style="color: #94a3b8; font-size: 13px; text-align: center;">لا توجد أرقام مضافة في الأسطول حالياً</p>';
+                    }}
+                }} catch (e) {{
+                    container.innerHTML = '<p style="color: #ef4444; font-size: 13px; text-align: center;">فشل تحميل قائمة الأرقام</p>';
+                }}
+            }}
+
+            async function deleteAccount(phoneNumber) {{
+                if (!confirm(`هل أنت تأكد من حذف الرقم ${{phoneNumber}} من الأسطول؟`)) return;
+
+                showStatus("جاري حذف الرقم من قاعدة البيانات...");
+                try {{
+                    const res = await fetch("/api/delete-account", {{
+                        method: "POST",
+                        headers: {{ "Content-Type": "application/json" }},
+                        body: JSON.stringify({{ user_id: USER_ID, phone: phoneNumber }})
+                    }});
+                    const data = await res.json();
+                    if (res.ok) {{
+                        showStatus(data.message || "تم حذف الرقم بنجاح!");
+                        await updateCount();
+                        await loadAccountsList();
+                    }} else {{
+                        showStatus(data.detail || "حدث خطأ أثناء الحذف", true);
+                    }}
+                }} catch (e) {{
+                    showStatus("خطأ في الاتصال بالسيرفر أثناء الحذف", true);
+                }}
+            }}
+
             if (USER_ID) {{
                 checkSub();
                 updateCount();
+                loadAccountsList();
             }}
 
             function openModal(id) {{ document.getElementById(id).style.display = "flex"; }}
@@ -385,7 +443,8 @@ async def serve_dashboard():
                 const data = await res.json();
                 if(res.ok) {{
                     showStatus(data.message);
-                    updateCount();
+                    await updateCount();
+                    await loadAccountsList();
                 }} else {{
                     showStatus(data.detail, true);
                 }}
@@ -414,7 +473,6 @@ async def serve_dashboard():
     </body>
     </html>
     """
-
 # ==========================================
 # 5. APIs إدارة الحسابات
 # ==========================================
@@ -435,7 +493,7 @@ async def register_user(req: RegisterUserRequest):
             return {
                 "status": "success", 
                 "user_id": user_id, 
-                "message": "مرحباً بعودتك! تم استعادة حسابك واشتراكك بنجاح 🟢"
+                "message": "مرحباً بعودتك! تم استعادة حسابك وااشتراكك بنجاح 🟢"
             }
 
         user_id = 'user_' + uuid.uuid4().hex[:9]
@@ -507,6 +565,17 @@ async def get_account_count(user_id: str):
     response = supabase.table("telegram_accounts").select("id", count="exact").eq("user_id", user_id).execute()
     return {"count": response.count if response.count is not None else len(response.data)}
 
+# ----------------------------------------------------
+# جديد: API جلب قائمة الحسابات المضافة للمستخدم
+# ----------------------------------------------------
+@app.get("/api/get-accounts")
+async def get_accounts(user_id: str):
+    try:
+        res = supabase.table("telegram_accounts").select("phone").eq("user_id", user_id).execute()
+        return {"status": "success", "accounts": res.data if res.data else []}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/api/send-code")
 async def send_code(req: PhoneRequest):
     if not check_user_subscription(req.user_id):
@@ -563,9 +632,10 @@ async def start_adding(req: AddMembersRequest):
     # تشغيل المحرك الحقيقي فوراً بالخلفية
     asyncio.create_task(run_heavy_duty_engine(accounts.data, req.source_group, req.target_group))
     return {"status": "success", "message": f"⚡ تم البدء بالفعل عبر ({len(accounts.data)}) حساب! الأعضاء يضافون الآن لجروبك."}
+
 class DeleteAccountRequest(BaseModel):
     user_id: str
-    phone_number: str
+    phone: str
 
 @app.post("/api/delete-account")
 async def delete_account(req: DeleteAccountRequest):
@@ -573,11 +643,12 @@ async def delete_account(req: DeleteAccountRequest):
         supabase.table("telegram_accounts") \
             .delete() \
             .eq("user_id", req.user_id) \
-            .eq("phone", req.phone_number) \
+            .eq("phone", req.phone) \
             .execute()
-        return {"status": "success", "message": f"تم حذف الحساب {req.phone_number} بنجاح!"}
+        return {"status": "success", "message": f"تم حذف الحساب {req.phone} بنجاح!"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 # ==========================================
 # 6. المحرك الخارق المصحح (تجاوز الحظر والقيود الصامتة)
 # ==========================================
@@ -737,3 +808,4 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
         await report_client.disconnect()
     except Exception as report_err:
         print(f"تعذر إرسال تقرير النهاية للمجموعة Target: {report_err}")
+    
