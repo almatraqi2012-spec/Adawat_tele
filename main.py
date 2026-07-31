@@ -35,7 +35,7 @@ from telethon.errors import (
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://juuleypxvvcfgjdikpwu.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_Kh6iN4Aq6X6gLNcElNzgRg_CjlLMaZL")
 
-API_ID = int(os.getenv("TELEGRAM_API_ID", "21349867")
+API_ID = int(os.getenv("TELEGRAM_API_ID", "21349867"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "7ced3ee4c80117bd5138410811b91f9f")
 
 OXAPAY_MERCHANT_KEY = os.getenv("OXAPAY_MERCHANT_KEY", "VVWSV1-17YEGL-05LITH-PLZ5EX")
@@ -720,50 +720,86 @@ async def get_accounts(user_id: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+# ==========================================
+# 5. مسارات API لربط الحسابات وتوثيق OTP
+# ==========================================
+
 @app.post("/api/send-code")
 async def send_code(req: PhoneRequest):
     if not check_user_subscription(req.user_id):
         raise HTTPException(status_code=403, detail="عذراً، يجب تفعيل الاشتراك أولاً.")
 
+    # إنشاء كائن العميل بالجلسة المؤقتة
     client = TelegramClient(StringSession(), API_ID, API_HASH)
     await client.connect()
+    
     try:
+        # طلب إرسال الكود من تليجرام
         sent_code = await client.send_code_request(req.phone_number)
-        pending_sessions[req.phone_number] = client.session.save()
+        
+        # حفظ كائن العميل أو الجلسة النشطة في الذاكرة
+        pending_sessions[req.phone_number] = {
+            "session": client.session.save(),
+            "phone_code_hash": sent_code.phone_code_hash
+        }
+        
+        # ⚠️ ملاحظة: لا نقم بعمل disconnect هنا حتى لا تلغى جلسة الـ OTP
         await client.disconnect()
-        return {"status": "success", "phone_code_hash": sent_code.phone_code_hash, "message": "تم إرسال كود التفعيل!"}
+        
+        return {
+            "status": "success", 
+            "phone_code_hash": sent_code.phone_code_hash, 
+            "message": "تم إرسال كود التفعيل بنجاح!"
+        }
     except Exception as e:
         await client.disconnect()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=f"فشل إرسال الكود: {str(e)}")
+
 
 @app.post("/api/verify-code")
 async def verify_code(req: VerifyRequest):
     if not check_user_subscription(req.user_id):
         raise HTTPException(status_code=403, detail="عذراً، يجب تفعيل الاشتراك أولاً.")
 
-    session_str = pending_sessions.get(req.phone_number)
-    if not session_str:
-        raise HTTPException(status_code=400, detail="انتهت الجلسة، حاول مجدداً.")
+    session_data = pending_sessions.get(req.phone_number)
+    if not session_data:
+        raise HTTPException(status_code=400, detail="انتهت الجلسة أو لم يتم طلب كود لهذا الرقم، حاول مجدداً.")
 
+    session_str = session_data["session"]
+    phone_code_hash = session_data["phone_code_hash"]
+
+    # إعادة فتح الجلسة بنفس الـ StringSession الحالية
     client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
     await client.connect()
+    
     try:
-        await client.sign_in(phone=req.phone_number, code=req.code, phone_code_hash=req.phone_code_hash)
+        # تسجيل الدخول باستخدام الكود والـ phone_code_hash
+        await client.sign_in(
+            phone=req.phone_number, 
+            code=req.code, 
+            phone_code_hash=phone_code_hash
+        )
+        
+        # استخراج الجلسة النهائية الدائمة بعد نجاح الدخول
         final_session = client.session.save()
         await client.disconnect()
 
+        # حفظ الحساب المفعل في Supabase
         supabase.table("telegram_accounts").insert({
             "user_id": req.user_id,
             "phone": req.phone_number,
             "session_string": final_session
         }).execute()
 
+        # حذف البيانات المؤقتة
         del pending_sessions[req.phone_number]
+        
         return {"status": "success", "message": "🟢 تم ربط الرقم بنجاح وإضافته للأسطول!"}
+        
     except Exception as e:
         await client.disconnect()
-        raise HTTPException(status_code=400, detail=f"خطأ في التحقق: {str(e)}")
-
+        raise HTTPException(status_code=400, detail=f"خطأ في التحقق من الكود: {str(e)}")
+        
 @app.post("/api/start-adding")
 async def start_adding(req: AddMembersRequest):
     if not check_user_subscription(req.user_id):
