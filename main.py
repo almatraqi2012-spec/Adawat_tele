@@ -4,6 +4,7 @@ import asyncio
 import random
 import uuid
 import requests
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 from fastapi import FastAPI, HTTPException, Request
@@ -43,10 +44,21 @@ ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "6016547718")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "Shrkatbot")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-app = FastAPI(title="Dragon Engine - Heavy Duty Edition")
 
-# 🟢 إنشاء كائن البوت (bot) وتفعيله لتجنب NameError
-bot = TelegramClient('admin_bot_session', API_ID, API_HASH).start(bot_token=ADMIN_TELEGRAM_BOT_TOKEN)
+# 🟢 إنشاء كائن البوت بدون تشغيله المباشر
+bot = TelegramClient('admin_bot_session', API_ID, API_HASH)
+
+# 🟢 إدارة تشغيل البوت بسلاسة مع FastAPI
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # تشغيل البوت عند بدء السيرفر
+    await bot.start(bot_token=ADMIN_TELEGRAM_BOT_TOKEN)
+    print("🟢 Admin Bot Started Successfully!")
+    yield
+    # إيقاف البوت عند إغلاق السيرفر
+    await bot.disconnect()
+
+app = FastAPI(title="Dragon Engine - Heavy Duty Edition", lifespan=lifespan)
 
 pending_sessions = {}
 MONTHLY_PRICE_USD = 80
@@ -81,7 +93,6 @@ class PaymentRequest(BaseModel):
 # 3. الوظائف المساعدة والاشتراكات
 # ==========================================
 
-# ✅ دالة الإشعارات
 def send_telegram_notification(message: str):
     if ADMIN_TELEGRAM_BOT_TOKEN != "YOUR_BOT_TOKEN" and ADMIN_CHAT_ID != "YOUR_TELEGRAM_CHAT_ID":
         try:
@@ -90,14 +101,11 @@ def send_telegram_notification(message: str):
         except Exception as e:
             print(f"Failed to send Telegram notification: {e}")
 
-# ✅ دالة تمييز وفحص حالة المشترك
 async def handle_user_login(user_id: str, username: str = None):
     user_id_str = str(user_id)
     
-    # 1. البحث في Supabase
     res = supabase.table("users_subscriptions").select("*").eq("user_id", user_id_str).execute()
     
-    # حالة (1): مستخدم جديد لأول مرة
     if not res.data:
         new_user_data = {
             "user_id": user_id_str,
@@ -115,7 +123,6 @@ async def handle_user_login(user_id: str, username: str = None):
 
     sub = res.data[0]
     
-    # حالة (2): غير مفعل يدويًا
     if not sub.get("is_active"):
         return {
             "status": "INACTIVE_USER",
@@ -123,7 +130,6 @@ async def handle_user_login(user_id: str, username: str = None):
             "message": f"⛔️ أهلاً بك مجدداً!\nحسابك (`{user_id_str}`) موجود لدينا لكنه غير مفعل حالياً.\nيرجى التواصل مع الدعم لتشغيله."
         }
 
-    # حالة (3): فحص التاريخ
     sub_end_str = sub.get("subscription_end")
     if not sub_end_str:
         return {
@@ -141,7 +147,6 @@ async def handle_user_login(user_id: str, username: str = None):
             "message": f"⚠️ انتهت مدة اشتراكك في: ({sub_end.strftime('%Y-%m-%d')}).\nيرجى التجديد للاستمرار."
         }
 
-    # حالة (4): مفعل
     return {
         "status": "ACTIVE_USER",
         "allowed": True,
@@ -158,16 +163,13 @@ async def start_handler(event):
     sender = await event.get_sender()
     username = getattr(sender, 'username', None)
 
-    # فحص حالة الحساب وتصنيفه تلقائياً
     auth = await handle_user_login(user_id, username)
 
-    # قطع الطريق فوراً إذا كان الحساب غير مفعل أو جديداً
     if not auth["allowed"]:
         await event.respond(auth["message"])
-        return # ⛔️ يمنع الانتقال لباقي السكربت
+        return
 
-    # السماح بالمرور للمستخدم المفعل فقط
-    await event.respond(f"{auth['message']}\n\n🚀 أهلاً بك في المحرك الجبار! اختر العملية المطلوب تنفيذها...")-----------------------------------------------------------
+    await event.respond(f"{auth['message']}\n\n🚀 أهلاً بك في المحرك الجبار! اختر العملية المطلوب تنفيذها...")--------------------------------------------------------
 # دالة تمييز وفحص المستخدمين (جديد / مفعل / غير مفعل)
 # -------------------------------------------------------------
 async def handle_user_login(user_id: str, username: str = None):
