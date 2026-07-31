@@ -785,10 +785,10 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
             except Exception as e:
                 print(f"❌ [فشل] الحساب {phone} لم يستطع إضافة ({u_name or u_id}): {e}")
 
-            except Exception as e:
-                print(f"💥 خطأ غير متوقع بالجلسة {phone}: {e}")
-            finally:
-                await client.disconnect()
+    except Exception as e:
+        print(f"💥 خطأ غير متوقع بالجلسة {phone}: {e}")
+    finally:
+        await client.disconnect()
 
 
 async def run_heavy_duty_engine(accounts_data, source_group, target_group):
