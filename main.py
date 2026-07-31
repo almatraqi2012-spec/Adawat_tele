@@ -1004,6 +1004,8 @@ async def scrape_all_types(master_client, src_entity):
     # 🟢 1. تعريف القوائم والمتغيرات بقيم فارغة أولاً لتجنب NameError
 # 🟢 يجب أن يكون المقطع كاملاً داخل دالة async def
 async def run_scraper_task(master_client, src_entity):
+    # 🟢 1. تعريف المتغيرات أولاً لمنع خطأ NameError تماماً
+    participants = []
     scraped_users = []
     seen_ids = set()
 
