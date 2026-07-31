@@ -77,6 +77,13 @@ class PaymentRequest(BaseModel):
 # ==========================================
 # 3. الوظائف المساعدة والاشتراكات
 # ==========================================
+# ==========================================
+# 3. الوظائف المساعدة والاشتراكات
+# ==========================================
+
+from datetime import datetime, timezone
+
+# ✅ دالة الإشعارات (احتفظ بها كما هي!)
 def send_telegram_notification(message: str):
     if ADMIN_TELEGRAM_BOT_TOKEN != "YOUR_BOT_TOKEN" and ADMIN_CHAT_ID != "YOUR_TELEGRAM_CHAT_ID":
         try:
@@ -85,26 +92,90 @@ def send_telegram_notification(message: str):
         except Exception as e:
             print(f"Failed to send Telegram notification: {e}")
 
-def check_user_subscription(user_id: str) -> bool:
-    res = supabase.table("users_subscriptions").select("*").eq("user_id", user_id).execute()
-    if not res.data:
-        return False
-    
-    sub = res.data[0]
-    if not sub.get("is_active"):
-        return False
+# ✅ دالة تمييز وفحص حالة المشترك (التي ضفناها سابقاً)
+async def handle_user_login(user_id: str, username: str = None):
+    # (كود دالة handle_user_login يوضع هنا)
+    ...
 
+# ==========================================
+# 4. معالجة أوامر البوت
+# ==========================================
+
+# ✅ دالة استقبال أمر البدء واستدعاء الفحص
+@bot.on(events.NewMessage(pattern='/start'))
+async def start_handler(event):
+    user_id = str(event.sender_id)
+    sender = await event.get_sender()
+    username = getattr(sender, 'username', None)
+
+    # فحص حالة الحساب
+    auth = await handle_user_login(user_id, username)
+
+    if not auth["allowed"]:
+        await event.respond(auth["message"])
+        return # ⛔️ إيقاف غير المفعل
+
+    await event.respond(f"{auth['message']}\n\n🚀 أهلاً بك في المحرك الجبار! اختر العملية المطلوب تنفيذها...")
+
+# -------------------------------------------------------------
+# دالة تمييز وفحص المستخدمين (جديد / مفعل / غير مفعل)
+# -------------------------------------------------------------
+async def handle_user_login(user_id: str, username: str = None):
+    user_id_str = str(user_id)
+    
+    # 1. البحث في Supabase
+    res = supabase.table("users_subscriptions").select("*").eq("user_id", user_id_str).execute()
+    
+    # حالة (1): مستخدم جديد لأول مرة
+    if not res.data:
+        new_user_data = {
+            "user_id": user_id_str,
+            "username": username or "Unknown",
+            "is_active": False,
+            "subscription_end": None
+        }
+        supabase.table("users_subscriptions").insert(new_user_data).execute()
+        
+        return {
+            "status": "NEW_USER",
+            "allowed": False,
+            "message": f"👋 أهلاً بك! هذه أول مرة تسجل فيها بالمحرك.\n🆔 رقم آيديك: `{user_id_str}`\n\n⚠️ حسابك غير مفعل حالياً. ارسل هذا الرقم للإدارة لتنشيط اشتراكك."
+        }
+
+    sub = res.data[0]
+    
+    # حالة (2): غير مفعل يدويًا
+    if not sub.get("is_active"):
+        return {
+            "status": "INACTIVE_USER",
+            "allowed": False,
+            "message": f"⛔️ أهلاً بك مجدداً!\nحسابك (`{user_id_str}`) موجود لدينا لكنه غير مفعل حالياً.\nيرجى التواصل مع الدعم لتشغيله."
+        }
+
+    # حالة (3): فحص التاريخ
     sub_end_str = sub.get("subscription_end")
     if not sub_end_str:
-        return False
+        return {
+            "status": "NO_EXPIRY_SET",
+            "allowed": False,
+            "message": "⚠️ اشتراكك غير مكتمل (لا يوجد تاريخ انتهاء). تواصل مع الدعم."
+        }
 
     sub_end = datetime.fromisoformat(sub_end_str.replace("Z", "+00:00"))
     if datetime.now(timezone.utc) > sub_end:
-        supabase.table("users_subscriptions").update({"is_active": False}).eq("user_id", user_id).execute()
-        return False
+        supabase.table("users_subscriptions").update({"is_active": False}).eq("user_id", user_id_str).execute()
+        return {
+            "status": "EXPIRED_USER",
+            "allowed": False,
+            "message": f"⚠️ انتهت مدة اشتراكك في: ({sub_end.strftime('%Y-%m-%d')}).\nيرجى التجديد للاستمرار."
+        }
 
-    return True
-
+    # حالة (4): مفعل
+    return {
+        "status": "ACTIVE_USER",
+        "allowed": True,
+        "message": f"✅ أهلاً بعودتك! اشتراكك فعال ومستمر حتى: {sub_end.strftime('%Y-%m-%d')}"
+    }
 # ==========================================
 # 4. الواجهة التفاعلية
 # ==========================================
@@ -490,6 +561,7 @@ async def register_user(req: RegisterUserRequest):
         if not clean_contact or not clean_name:
             raise HTTPException(status_code=400, detail="يرجى إدخال البيانات بشكل صحيح")
 
+        # 1. البحث عن المستخدم سلفاً في جدول users1
         existing = supabase.table("users1").select("user_id").eq("username_or_phone", clean_contact).execute()
         
         if existing.data and len(existing.data) > 0:
@@ -497,29 +569,45 @@ async def register_user(req: RegisterUserRequest):
             return {
                 "status": "success", 
                 "user_id": user_id, 
-                "message": "مرحباً بعودتك! تم استعادة حسابك وااشتراكك بنجاح 🟢"
+                "message": "مرحباً بعودتك! تم العثور على حسابك بنجاح 🟢"
             }
 
+        # 2. إنشاء معرف جديد للحساب
         user_id = 'user_' + uuid.uuid4().hex[:9]
         
+        # 3. حفظ بيانات المستخدم الأساسية
         supabase.table("users1").insert({
             "user_id": user_id,
             "full_name": clean_name,
             "username_or_phone": clean_contact
         }).execute()
 
+        # 4. إدراج سطر جديد في جدول الاشتراكات برقم الـ user_id الجديد (غير مفعل وبانتهاء غير محدد)
         supabase.table("users_subscriptions").insert({
             "user_id": user_id,
-            "is_active": False
+            "username": clean_contact,
+            "is_active": False,
+            "subscription_end": None
         }).execute()
 
-        send_telegram_notification(f"🚨 <b>مشترك جديد ينضم للخدمة!</b>\n👤 الاسم: {clean_name}\n📞 التواصل: {clean_contact}\n🆔 المعرف: <code>{user_id}</code>")
+        # 5. إرسال إشعار التنبيه على تليجرام للإدارة لتفعيل الحساب
+        send_telegram_notification(
+            f"🚨 <b>مشترك جديد يسجل في المنصة!</b>\n"
+            f"👤 <b>الاسم:</b> {clean_name}\n"
+            f"📞 <b>التواصل:</b> {clean_contact}\n"
+            f"🆔 <b>المعرف:</b> <code>{user_id}</code>\n\n"
+            f"💡 <i>توجه إلى Supabase لتفعيل الاشتراك لهذا المعرف.</i>"
+        )
         
-        return {"status": "success", "user_id": user_id, "message": "تم إنشاء الحساب بنجاح!"}
+        return {
+            "status": "success", 
+            "user_id": user_id, 
+            "message": "تم إنشاء الحساب بنجاح! حسابك بانتظار التفعيل من الإدارة."
+        }
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
+        
 @app.get("/api/subscription-status")
 async def subscription_status(user_id: str):
     res = supabase.table("users_subscriptions").select("*").eq("user_id", user_id).execute()
