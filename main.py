@@ -1003,12 +1003,13 @@ async def scrape_all_types(master_client, src_entity):
     # -------------------------------------------------------------
     # 🟢 1. تعريف القوائم والمتغيرات بقيم فارغة أولاً لتجنب NameError
 # 🟢 يجب أن يكون المقطع كاملاً داخل دالة async def
-async def run_scraper_task(...):
-    # مسافة محاذاة (Indentation) لداخل الدالة
-    participants = []
+async def run_scraper_task(master_client, src_entity):
     scraped_users = []
     seen_ids = set()
 
+    # ==========================================
+    # 1️⃣ الطريقة الأولى: السحب المباشر (العادي)
+    # ==========================================
     try:
         participants = await master_client.get_participants(src_entity, limit=3000)
         for u in participants:
@@ -1019,8 +1020,28 @@ async def run_scraper_task(...):
         if scraped_users:
             print(f"✅ [سحب عادي] تم جلب {len(scraped_users)} عضو من القائمة المباشرة.")
     except Exception as e:
-        print(f"💥 خطأ أثناء سحب الأعضاء: {e}")
+        print(f"⚠️ القائمة المباشرة غير متاحة أو الأعضاء مخفيون: {e}")
 
+    # ==========================================
+    # 2️⃣ الطريقة الثانية: سحب المتفاعلين من الرسائل (السحب الآخر)
+    # ==========================================
+    print("🔍 جاري تشغيل السحب المتقدم (من تاريخ الرسائل والمتفاعلين)...")
+    try:
+        async for msg in master_client.iter_messages(src_entity, limit=1000):
+            if msg.sender_id and msg.sender_id not in seen_ids:
+                try:
+                    user = await master_client.get_entity(msg.sender_id)
+                    if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
+                        seen_ids.add(user.id)
+                        scraped_users.append((user.id, getattr(user, 'access_hash', None), getattr(user, 'username', None)))
+                except Exception:
+                    continue
+                    
+        print(f"🔥 [سحب متقدم] الإجمالي النهائي بعد دمج الطريقتين: {len(scraped_users)} عضو نشط!")
+    except Exception as e:
+        print(f"💥 خطأ أثناء سحب الرسائل: {e}")
+
+    return scraped_users
 # 🟢 3. الآن السكربت يستطيع إكمال عمله بأمان دون أن ينهار
     # -------------------------------------------------------------
     # 2. المحاولة الثانية: العمق الفائق (فحص 5000 رسالة + إيموجي)
