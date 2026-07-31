@@ -103,15 +103,16 @@ async def start_handler(event):
     sender = await event.get_sender()
     username = getattr(sender, 'username', None)
 
-    # فحص حالة الحساب
+    # فحص حالة الحساب وتصنيفه تلقائياً
     auth = await handle_user_login(user_id, username)
 
+    # قطع الطريق فوراً إذا كان الحساب غير مفعل أو جديداً
     if not auth["allowed"]:
         await event.respond(auth["message"])
-        return # ⛔️ إيقاف غير المفعل
+        return # ⛔️ يمنع الانتقال لباقي السكربت
 
+    # السماح بالمرور للمستخدم المفعل فقط
     await event.respond(f"{auth['message']}\n\n🚀 أهلاً بك في المحرك الجبار! اختر العملية المطلوب تنفيذها...")
-
 # -------------------------------------------------------------
 # دالة تمييز وفحص المستخدمين (جديد / مفعل / غير مفعل)
 # -------------------------------------------------------------
