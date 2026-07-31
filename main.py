@@ -690,9 +690,9 @@ async def safe_join_chat(client, raw_url):
         return False
 
 
-MAX_ADDS_PER_ACCOUNT = 5
-MIN_DELAY = 15
-MAX_DELAY = 30
+MAX_ADDS_PER_ACCOUNT = 40
+MIN_DELAY = 8
+MAX_DELAY = 15
 
 async def process_account_queue(acc_data, user_queue, source_raw, target_raw, api_id, api_hash):
     phone = acc_data.get("phone", "Unknown")
