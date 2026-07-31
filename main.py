@@ -169,7 +169,7 @@ async def start_handler(event):
         await event.respond(auth["message"])
         return
 
-    await event.respond(f"{auth['message']}\n\n🚀 أهلاً بك في المحرك الجبار! اختر العملية المطلوب تنفيذها...")--------------------------------------------------------
+    await event.respond(f"{auth['message']}\n\n🚀 أهلاً بك في المحرك الجبار! اختر العملية المطلوب تنفيذها...")
 # دالة تمييز وفحص المستخدمين (جديد / مفعل / غير مفعل)
 # -------------------------------------------------------------
 async def handle_user_login(user_id: str, username: str = None):
