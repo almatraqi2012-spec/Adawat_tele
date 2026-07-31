@@ -83,7 +83,7 @@ class PaymentRequest(BaseModel):
 
 from datetime import datetime, timezone
 
-# ✅ دالة الإشعارات (احتفظ بها كما هي!)
+# ✅ دالة الإشعارات
 def send_telegram_notification(message: str):
     if ADMIN_TELEGRAM_BOT_TOKEN != "YOUR_BOT_TOKEN" and ADMIN_CHAT_ID != "YOUR_TELEGRAM_CHAT_ID":
         try:
@@ -92,16 +92,11 @@ def send_telegram_notification(message: str):
         except Exception as e:
             print(f"Failed to send Telegram notification: {e}")
 
-# ✅ دالة تمييز وفحص حالة المشترك (التي ضفناها سابقاً)
-async def handle_user_login(user_id: str, username: str = None):
-    # (كود دالة handle_user_login يوضع هنا)
-    ...
-
 # ==========================================
 # 4. معالجة أوامر البوت
 # ==========================================
 
-# ✅ دالة استقبال أمر البدء واستدعاء الفحص
+# ✅ تم إزالة النقطتين الراسيتين من نهاية السطر
 @bot.on(events.NewMessage(pattern='/start'))
 async def start_handler(event):
     user_id = str(event.sender_id)
