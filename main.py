@@ -1,4 +1,5 @@
 import os
+import re
 import asyncio
 import random
 import uuid
@@ -13,6 +14,7 @@ from supabase import create_client, Client
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import InviteToChannelRequest, JoinChannelRequest
+from telethon.tl.functions.messages import ImportChatInviteRequest
 from telethon.tl.types import InputPeerUser
 from telethon.errors import (
     PeerFloodError,
@@ -21,7 +23,9 @@ from telethon.errors import (
     UserNotMutualContactError,
     UserIdInvalidError,
     UserChannelsTooMuchError,
-    UserBotError
+    UserBotError,
+    UserAlreadyParticipantError,
+    ChatAdminRequiredError
 )
 
 # ==========================================
@@ -653,11 +657,44 @@ async def delete_account(req: DeleteAccountRequest):
 # 6. المحرك الخارق المصحح (تجاوز الحظر والقيود الصامتة)
 # ==========================================
 
+
+# دالة مساعدة معالجة وانضمام للقروبات (عامة وخاصة)
+async def safe_join_chat(client, raw_url):
+    clean_url = raw_url.strip()
+    
+    # 1. إذا كان رابط دعوة خاص (يحتوي على + أو joinchat)
+    if "+" in clean_url or "joinchat" in clean_url:
+        # استخراج الـ Hash الخاص بالدعوة
+        match = re.search(r'(?:\+|\/joinchat\/)([a-zA-Z0-9_-]+)', clean_url)
+        if match:
+            invite_hash = match.group(1)
+            try:
+                await client(ImportChatInviteRequest(invite_hash))
+                return True
+            except UserAlreadyParticipantError:
+                return True
+            except Exception as e:
+                print(f"فشل الانضمام برابط الدعوة الخاص: {e}")
+                return False
+    
+    # 2. إذا كان رابط عام أو معرف عادي (@username / t.me/username)
+    clean_name = clean_url.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
+    try:
+        entity = await client.get_entity(clean_name)
+        await client(JoinChannelRequest(entity))
+        return True
+    except UserAlreadyParticipantError:
+        return True
+    except Exception as e:
+        print(f"فشل الانضمام للمجموعة العامة: {e}")
+        return False
+
+
 MAX_ADDS_PER_ACCOUNT = 5
 MIN_DELAY = 15
 MAX_DELAY = 30
 
-async def process_account_queue(acc_data, user_queue, source_clean_name, target_clean_name, api_id, api_hash):
+async def process_account_queue(acc_data, user_queue, source_raw, target_raw, api_id, api_hash):
     phone = acc_data.get("phone", "Unknown")
     session_str = acc_data.get("session_string")
     
@@ -669,70 +706,66 @@ async def process_account_queue(acc_data, user_queue, source_clean_name, target_
         
         # 1. التحقق من توثيق الجلسة
         if not await client.is_user_authorized():
-            err_msg = f"❌ [حذف تلقائي] الحساب {phone} غير مفعل أو ملغى! جاري مسحه..."
-            print(err_msg)
+            err_msg = f"❌ [حذف تلقائي] الحساب {phone} غير مفعل! جاري مسحه..."
             send_telegram_notification(err_msg)
             try:
                 supabase.table("telegram_accounts").delete().eq("phone", phone).execute()
-            except Exception as se:
-                print(f"خطأ أثناء حذف الحساب من Supabase: {se}")
+            except Exception:
+                pass
             return
 
-        # 2. الانضمام إلى الجروب المصدر أولاً (لكسر حظر الغرباء في خوارزميات تليجرام)
-        try:
-            src_entity = await client.get_entity(source_clean_name)
-            await client(JoinChannelRequest(src_entity))
-        except Exception as e:
-            print(f"⚠️ [الحساب {phone}] تعذر الانضمام للجروب المصدر: {e}")
+        # 2. إجبار الحساب الفرعي على الانضمام للقروب المصدر أولاً
+        joined_src = await safe_join_chat(client, source_raw)
+        if joined_src:
+            print(f"✅ [الحساب {phone}] انضم للقروب المصدر بنجاح!")
+            send_telegram_notification(f"🔗 [الحساب {phone}] دخل القروب المصدر بنجاح.")
+        else:
+            send_telegram_notification(f"⚠️ [الحساب {phone}] تعذر انضمامه للمصدر، جاري المحاولة بشكل مباشر...")
 
-        # 3. الانضمام إلى الجروب الهدف
-        try:
-            target_entity = await client.get_entity(target_clean_name)
-            await client(JoinChannelRequest(target_entity))
-        except Exception as e:
-            send_telegram_notification(f"⚠️ [الحساب {phone}] تعذر الانضمام للجروب Target: {e}")
+        # 3. إجبار الحساب الفرعي على الانضمام للقروب الهدف
+        joined_trg = await safe_join_chat(client, target_raw)
+        if not joined_trg:
+            send_telegram_notification(f"🛑 [الحساب {phone}] فشل بالانضمام للجروب الهدف! تم إيقاف هذا الحساب.")
             return
 
-        # 4. البدء بالإضافة مع معالجة الأخطاء الذكية
+        # الحصول على كيان الجروب الهدف للبدء بالإصافة
+        target_clean = target_raw.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
+        target_entity = await client.get_entity(target_clean)
+
+        # 4. التنفيذ الفعلي للإضافة
         while user_queue and adds_count < MAX_ADDS_PER_ACCOUNT:
             user_info = user_queue.pop(0)
             u_id, u_hash, u_name = user_info
             
             try:
-                # جعل الحساب الفرعي يجلب كيان المستخدم بنفسه لتفادي خطأ access_hash
+                # جعل الحساب يجلب الكيان بنفسه بعد انضمامه للمصدر
                 if u_name:
                     user_to_add = await client.get_input_entity(u_name)
                 else:
                     user_to_add = await client.get_input_entity(u_id)
 
-                # تنفيذ الإضافة
+                # الإضافة
                 await client(InviteToChannelRequest(target_entity, [user_to_add]))
                 adds_count += 1
                 
-                log_msg = f"✅ [نجاح] الحساب {phone} أضاف: ({u_name or u_id}) | Total: {adds_count}"
-                group_msg = f"✅ تم إضافة العضو ({u_name or u_id}) بنجاح! 🚀"
-                
+                log_msg = f"✅ [نجاح] الحساب {phone} أضاف: ({u_name or u_id}) | إجمالي الحساب: {adds_count}"
                 print(log_msg)
                 send_telegram_notification(log_msg)
-                
-                # إرسال التنبيه داخل الجروب الهدف
-                try:
-                    await client.send_message(target_entity, group_msg)
-                except Exception as msg_err:
-                    print(f"⚠️ تعذر إرسال الرسالة للجروب Target: {msg_err}")
                 
                 await asyncio.sleep(random.randint(MIN_DELAY, MAX_DELAY))
 
             except UserPrivacyRestrictedError:
                 print(f"🔒 [خصوصية] العضو ({u_name or u_id}) يمنع الإضافة من الغرباء.")
+            except UserNotMutualContactError:
+                send_telegram_notification(f"⚠️ [قيود] الحساب {phone} مقيد مؤقتاً من إضافة أرقام ليست في جهات اتصاله.")
+            except ChatAdminRequiredError:
+                send_telegram_notification(f"🛑 [إعدادات الجروب] الجروب الهدف يمنع إضافة الأعضاء إلا للمشرفين!")
+                break
             except (PeerFloodError, FloodWaitError):
-                err_msg = f"🛑 [حظر مؤقت] الحساب {phone} تم إيقافه مؤقتاً بواسطة تليجرام! (FloodWait/PeerFlood)"
-                print(err_msg)
+                err_msg = f"🛑 [حظر مؤقت] الحساب {phone} تم إيقافه مؤقتاً بواسطة تليجرام!"
                 send_telegram_notification(err_msg)
                 user_queue.insert(0, user_info)
                 break
-            except UserChannelsTooMuchError:
-                print(f"⚠️ العضو ({u_name or u_id}) مشترك في عدد كبير جداً من القنوات.")
             except Exception as e:
                 print(f"❌ [فشل] الحساب {phone} لم يستطع إضافة ({u_name or u_id}): {e}")
 
@@ -741,13 +774,11 @@ async def process_account_queue(acc_data, user_queue, source_clean_name, target_
     finally:
         await client.disconnect()
 
+
 async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     if not accounts_data:
         send_telegram_notification("❌ لا توجد حسابات مضافة للتشغيل!")
         return
-
-    src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
-    trg_clean = target_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
 
     scraped_users = []
     master_acc = accounts_data[0]
@@ -756,21 +787,16 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     try:
         await master_client.connect()
         if not await master_client.is_user_authorized():
-            send_telegram_notification("❌ الحساب الرئيسي لسحب الأعضاء غير مفعل! جاري التخطي للحساب التالي...")
-            # حذف الحساب الرئيسي المقيد تلقائياً من Supabase
-            try:
-                supabase.table("telegram_accounts").delete().eq("phone", master_acc.get("phone")).execute()
-            except Exception:
-                pass
+            send_telegram_notification("❌ الحساب الرئيسي لسحب الأعضاء غير مفعل!")
             return
 
+        # 1. انضمام الحساب الرئيسي وسحب الأعضاء
+        send_telegram_notification("🔍 جاري انضمام الحساب الرئيسي وسحب الاعضاء من المصدر...")
+        await safe_join_chat(master_client, source_group)
+        
+        src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
         src_entity = await master_client.get_entity(src_clean)
-        try:
-            await master_client(JoinChannelRequest(src_entity))
-        except Exception:
-            pass
-
-        send_telegram_notification("🔍 جاري سحب الأعضاء النشطين من المجموعة المصدر...")
+        
         participants = await master_client.get_participants(src_entity, limit=1000)
         
         for u in participants:
@@ -787,29 +813,16 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
         send_telegram_notification("❌ لم يتم العثور على أعضاء أو الجروب المصدر محمي من السحب!")
         return
 
-    send_telegram_notification(f"🔥 تم سحب ({len(scraped_users)}) عضو بنجاح! جاري التوزيع على الأسطول...")
+    send_telegram_notification(f"🔥 تم سحب ({len(scraped_users)}) عضو بنجاح! جاري تشغيل الأسطول وإدخالهم للمصدر أولاً...")
 
     user_queue = list(scraped_users)
     tasks = []
+    
+    # تمرير رابط المصدر ورابط الهدف الأصلي كما هما دون تغيير لكل حساب
     for acc in accounts_data:
         if user_queue:
-            tasks.append(process_account_queue(acc, user_queue, trg_clean, API_ID, API_HASH))
+            tasks.append(process_account_queue(acc, user_queue, source_group, target_group, API_ID, API_HASH))
 
     # تنفيذ متوازي لجميع حسابات الأسطول
     await asyncio.gather(*tasks)
-    
-    done_msg = "🎉 اكتملت العملية بالكامل بنجاح!"
-    
-    # تنبيه في البوت الخاص بك
-    send_telegram_notification(done_msg)
-    
-    # إرسال تقرير إتمام الحملة للجروب الهدف ليراه المشترك
-    try:
-        report_client = TelegramClient(StringSession(master_acc["session_string"]), API_ID, API_HASH)
-        await report_client.connect()
-        trg_entity = await report_client.get_entity(trg_clean)
-        await report_client.send_message(trg_entity, f"🔥 {done_msg}\nتم إضافة جميع الأعضاء المتاحين بنجاح عبر أسطول الحسابات.")
-        await report_client.disconnect()
-    except Exception as report_err:
-        print(f"تعذر إرسال تقرير النهاية للمجموعة Target: {report_err}")
-    
+    send_telegram_notification("🎉 اكتملت العملية بالكامل!")
