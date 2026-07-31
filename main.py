@@ -729,31 +729,27 @@ async def send_code(req: PhoneRequest):
     if not check_user_subscription(req.user_id):
         raise HTTPException(status_code=403, detail="عذراً، يجب تفعيل الاشتراك أولاً.")
 
-    # إنشاء كائن العميل بالجلسة المؤقتة
+    # إنشاء جلسة حية
     client = TelegramClient(StringSession(), API_ID, API_HASH)
     await client.connect()
     
     try:
-        # طلب إرسال الكود من تليجرام
         sent_code = await client.send_code_request(req.phone_number)
         
-        # حفظ كائن العميل أو الجلسة النشطة في الذاكرة
+        # حفظ كائن client نفسه متصلاً داخل الذاكرة مؤقتاً
         pending_sessions[req.phone_number] = {
-            "session": client.session.save(),
+            "client": client,
             "phone_code_hash": sent_code.phone_code_hash
         }
-        
-        # ⚠️ ملاحظة: لا نقم بعمل disconnect هنا حتى لا تلغى جلسة الـ OTP
-        await client.disconnect()
         
         return {
             "status": "success", 
             "phone_code_hash": sent_code.phone_code_hash, 
-            "message": "تم إرسال كود التفعيل بنجاح!"
+            "message": "تم طلب الكود بنجاح! افحص تطبيق تليجرام على هاتفك."
         }
     except Exception as e:
         await client.disconnect()
-        raise HTTPException(status_code=400, detail=f"فشل إرسال الكود: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"خطأ من تليجرام: {str(e)}")
 
 
 @app.post("/api/verify-code")
@@ -763,42 +759,37 @@ async def verify_code(req: VerifyRequest):
 
     session_data = pending_sessions.get(req.phone_number)
     if not session_data:
-        raise HTTPException(status_code=400, detail="انتهت الجلسة أو لم يتم طلب كود لهذا الرقم، حاول مجدداً.")
+        raise HTTPException(status_code=400, detail="انتهت مهلة الجلسة أو لم يتم طلب كود، حاول مجدداً.")
 
-    session_str = session_data["session"]
+    # استخدام نفس الاتصال القائم بدون إعادة فتح جلسة جديدة
+    client: TelegramClient = session_data["client"]
     phone_code_hash = session_data["phone_code_hash"]
 
-    # إعادة فتح الجلسة بنفس الـ StringSession الحالية
-    client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
-    await client.connect()
-    
     try:
-        # تسجيل الدخول باستخدام الكود والـ phone_code_hash
         await client.sign_in(
             phone=req.phone_number, 
             code=req.code, 
             phone_code_hash=phone_code_hash
         )
         
-        # استخراج الجلسة النهائية الدائمة بعد نجاح الدخول
+        # استخراج كود الجلسة النهائي للحفظ في Supabase
         final_session = client.session.save()
         await client.disconnect()
 
-        # حفظ الحساب المفعل في Supabase
         supabase.table("telegram_accounts").insert({
             "user_id": req.user_id,
             "phone": req.phone_number,
             "session_string": final_session
         }).execute()
 
-        # حذف البيانات المؤقتة
         del pending_sessions[req.phone_number]
-        
         return {"status": "success", "message": "🟢 تم ربط الرقم بنجاح وإضافته للأسطول!"}
         
     except Exception as e:
         await client.disconnect()
-        raise HTTPException(status_code=400, detail=f"خطأ في التحقق من الكود: {str(e)}")
+        if req.phone_number in pending_sessions:
+            del pending_sessions[req.phone_number]
+        raise HTTPException(status_code=400, detail=f"خطأ في إدخال الكود: {str(e)}")
         
 @app.post("/api/start-adding")
 async def start_adding(req: AddMembersRequest):
