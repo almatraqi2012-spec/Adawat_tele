@@ -761,11 +761,27 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
             except ChatAdminRequiredError:
                 send_telegram_notification(f"🛑 [إعدادات الجروب] الجروب الهدف يمنع إضافة الأعضاء إلا للمشرفين!")
                 break
-            except (PeerFloodError, FloodWaitError):
-                err_msg = f"🛑 [حظر مؤقت] الحساب {phone} تم إيقافه مؤقتاً بواسطة تليجرام!"
-                send_telegram_notification(err_msg)
+            except FloodWaitError as e:
+                # الحصول على عدد الثواني التي يطلب تليجرام انتظارها (أو 60 ثانية افتراضياً)
+                wait_time = getattr(e, 'seconds', 60)
+                print(f"⏳ [تليجرام يطلب الانتظار] الحساب {phone} سينتظر {wait_time} ثانية ثم يكمل...")
+                send_telegram_notification(f"⏳ الحساب {phone} اصطدم بمهلة انتظر {wait_time} ثانية وسيكمل الإضافة...")
+    
+                # إعادة العضو للقائمة حتى لا يضيع
                 user_queue.insert(0, user_info)
-                break
+    
+                # جعل الحساب ينام طوال فترة المهلة ثم يواصل الحلقة بدلاً من الخروج
+                await asyncio.sleep(wait_time + 5)
+                continue
+
+            except PeerFloodError:
+                 # إذا واجه حظر سبام شديد، ينظر 3 دقائق ويحاول مرة أخرى دون الخروج
+                print(f"🛑 [PeerFlood] الحساب {phone} سينتظر 180 ثانية لتجاوز التقييد...")
+                send_telegram_notification(f"⚠️ [تقييد مؤقت] الحساب {phone} سينتظر 3 دقائق قبل الإضافة التالية...")
+    
+                user_queue.insert(0, user_info)
+                await asyncio.sleep(180)
+                continue
             except Exception as e:
                 print(f"❌ [فشل] الحساب {phone} لم يستطع إضافة ({u_name or u_id}): {e}")
 
