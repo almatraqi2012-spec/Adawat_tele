@@ -789,7 +789,77 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
         print(f"💥 خطأ غير متوقع بالجلسة {phone}: {e}")
     finally:
         await client.disconnect()
+        
+async def scrape_all_types(master_client, src_entity):
+    """
+    دالة السحب الشاملة والخارقة (حد 5000 رسالة):
+    - تسحب السحب المباشر إن كان القروب مفتوحاً.
+    - تفحص آخر 5000 رسالة للقروبات المخفية أو لزيادة الدقة.
+    - تستخرج كُتّاب الرسائل + المتفاعلين بالإيموجي (Reactions).
+    """
+    scraped_users = []
+    seen_ids = set()
 
+    # -------------------------------------------------------------
+    # 1. المحاولة الأولى: السحب المباشر من قائمة الأعضاء (إن أمكن)
+    # -------------------------------------------------------------
+    try:
+        participants = await master_client.get_participants(src_entity, limit=3000)
+        for u in participants:
+            if not u.bot and not u.deleted:
+                seen_ids.add(u.id)
+                scraped_users.append((u.id, u.access_hash, u.username))
+        
+        if scraped_users:
+            print(f"✅ [سحب عادي] تم جلب {len(scraped_users)} عضو من القائمة المباشرة.")
+    except Exception as e:
+        print(f"⚠️ القائمة المباشرة غير متاحة أو الأعضاء مخفيون: {e}")
+
+    # -------------------------------------------------------------
+    # 2. المحاولة الثانية: العمق الفائق (فحص 5000 رسالة + إيموجي)
+    # -------------------------------------------------------------
+    # إذا كان الجروب مخفياً أو نريد جلب أكبر قدر من النشطين والمتفاعلين
+    print("🕵️‍♂️ [فحص متقدم] جاري مسح آخر 5000 رسالة لاستخراج كُتّاب الشات والمتفاعلين بالإيموجي...")
+    
+    msg_count = 0
+    active_from_chat = 0
+
+    try:
+        # قراءة آخر 5000 رسالة
+        async for message in master_client.iter_messages(src_entity, limit=5000):
+            msg_count += 1
+            
+            # أ) سحب كاتب الرسالة
+            if message.sender_id and message.sender_id not in seen_ids:
+                try:
+                    user = await master_client.get_entity(message.sender_id)
+                    if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
+                        seen_ids.add(user.id)
+                        scraped_users.append((user.id, user.access_hash, user.username))
+                        active_from_chat += 1
+                except Exception:
+                    pass
+
+            # ب) سحب المتفاعلين بالإيموجي (Reactions) على الرسالة
+            if message.reactions and message.reactions.recent_reactions:
+                for reaction in message.reactions.recent_reactions:
+                    user_id = getattr(reaction.peer_id, 'user_id', None)
+                    if user_id and user_id not in seen_ids:
+                        try:
+                            user = await master_client.get_entity(user_id)
+                            if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
+                                seen_ids.add(user.id)
+                                scraped_users.append((user.id, user.access_hash, user.username))
+                                active_from_chat += 1
+                        except Exception:
+                            pass
+
+        print(f"🔥 [النتيجة الفائقة] تم فحص {msg_count} رسالة واستخراج {active_from_chat} عضو متفاعل جديد (نصوص + إيموجي)!")
+    except Exception as e:
+        print(f"❌ حدث خطأ أثناء فحص الرسائل والتفاعلات: {e}")
+
+    print(f"🎯 المجموع الكلي للجاهزين للإضافة: {len(scraped_users)} عضو نشط.")
+    return scraped_users
 
 async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     if not accounts_data:
@@ -813,7 +883,7 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
         src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
         src_entity = await master_client.get_entity(src_clean)
         
-        participants = await master_client.get_participants(src_entity, limit=1000)
+        user_queue = await scrape_all_types(master_client, src_entity)
         
         for u in participants:
             if not u.bot and not u.deleted:
