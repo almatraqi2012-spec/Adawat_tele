@@ -708,7 +708,13 @@ async def oxapay_webhook(request: Request):
 async def get_account_count(user_id: str):
     response = supabase.table("telegram_accounts").select("id", count="exact").eq("user_id", user_id).execute()
     return {"count": response.count if response.count is not None else len(response.data)}
-
+    
+def check_user_subscription(user_id: str) -> bool:
+    user_id_str = str(user_id)
+    res = supabase.table("users_subscriptions").select("is_active").eq("user_id", user_id_str).execute()
+    if res.data and res.data[0].get("is_active"):
+        return True
+    return False
 # ----------------------------------------------------
 # جديد: API جلب قائمة الحسابات المضافة للمستخدم
 # ----------------------------------------------------
@@ -726,17 +732,18 @@ async def get_accounts(user_id: str):
 
 @app.post("/api/send-code")
 async def send_code(req: PhoneRequest):
+    # 🟢 الفحص المباشر باستخدام الدالة التي أضفتها
     if not check_user_subscription(req.user_id):
         raise HTTPException(status_code=403, detail="عذراً، يجب تفعيل الاشتراك أولاً.")
 
-    # إنشاء جلسة حية
+    # إنشاء كائن الجلسة وإبقاؤه متصلاً
     client = TelegramClient(StringSession(), API_ID, API_HASH)
     await client.connect()
     
     try:
         sent_code = await client.send_code_request(req.phone_number)
         
-        # حفظ كائن client نفسه متصلاً داخل الذاكرة مؤقتاً
+        # حفظ كائن client نفسه متصلاً في الذاكرة
         pending_sessions[req.phone_number] = {
             "client": client,
             "phone_code_hash": sent_code.phone_code_hash
@@ -745,12 +752,11 @@ async def send_code(req: PhoneRequest):
         return {
             "status": "success", 
             "phone_code_hash": sent_code.phone_code_hash, 
-            "message": "تم طلب الكود بنجاح! افحص تطبيق تليجرام على هاتفك."
+            "message": "تم إرسال الكود بنجاح! افحص تطبيق تليجرام."
         }
     except Exception as e:
         await client.disconnect()
         raise HTTPException(status_code=400, detail=f"خطأ من تليجرام: {str(e)}")
-
 
 @app.post("/api/verify-code")
 async def verify_code(req: VerifyRequest):
