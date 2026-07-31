@@ -1002,26 +1002,24 @@ async def scrape_all_types(master_client, src_entity):
     # 1. المحاولة الأولى: السحب المباشر من قائمة الأعضاء (إن أمكن)
     # -------------------------------------------------------------
     # 🟢 1. تعريف القوائم والمتغيرات بقيم فارغة أولاً لتجنب NameError
-participants = []
-scraped_users = []
-seen_ids = set()
+# 🟢 يجب أن يكون المقطع كاملاً داخل دالة async def
+async def run_scraper_task(...):
+    # مسافة محاذاة (Indentation) لداخل الدالة
+    participants = []
+    scraped_users = []
+    seen_ids = set()
 
-try:
-    # 🟢 2. محاولة جلب الأعضاء
-    participants = await master_client.get_participants(src_entity, limit=3000)
-    
-    for u in participants:
-        if not u.bot and not u.deleted:
-            seen_ids.add(u.id)
-            scraped_users.append((u.id, u.access_hash, u.username))
-    
-    if scraped_users:
-        print(f"✅ [سحب عادي] تم جلب {len(scraped_users)} عضو من القائمة المباشرة.")
-    else:
-        print("⚠️ لم يتم العثور على أعضاء حقيقيين في هذه المجموعة.")
-
-except Exception as e:
-    print(f"💥 خطأ أثناء سحب الأعضاء (القائمة المباشرة غير متاحة أو مخفية): {e}")
+    try:
+        participants = await master_client.get_participants(src_entity, limit=3000)
+        for u in participants:
+            if not u.bot and not u.deleted:
+                seen_ids.add(u.id)
+                scraped_users.append((u.id, u.access_hash, u.username))
+        
+        if scraped_users:
+            print(f"✅ [سحب عادي] تم جلب {len(scraped_users)} عضو من القائمة المباشرة.")
+    except Exception as e:
+        print(f"💥 خطأ أثناء سحب الأعضاء: {e}")
 
 # 🟢 3. الآن السكربت يستطيع إكمال عمله بأمان دون أن ينهار
     # -------------------------------------------------------------
