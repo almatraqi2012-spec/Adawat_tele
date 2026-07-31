@@ -11,7 +11,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from supabase import create_client, Client
 
-from telethon import TelegramClient
+from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import InviteToChannelRequest, JoinChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
@@ -45,6 +45,9 @@ BOT_USERNAME = os.getenv("BOT_USERNAME", "Shrkatbot")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 app = FastAPI(title="Dragon Engine - Heavy Duty Edition")
 
+# 🟢 إنشاء كائن البوت (bot) وتفعيله لتجنب NameError
+bot = TelegramClient('admin_bot_session', API_ID, API_HASH).start(bot_token=ADMIN_TELEGRAM_BOT_TOKEN)
+
 pending_sessions = {}
 MONTHLY_PRICE_USD = 80
 USDT_ADDRESS = "TLtLuhkU2kkkR1Wz1TtrBTpoNRTNviYpsA"
@@ -77,11 +80,6 @@ class PaymentRequest(BaseModel):
 # ==========================================
 # 3. الوظائف المساعدة والاشتراكات
 # ==========================================
-# ==========================================
-# 3. الوظائف المساعدة والاشتراكات
-# ==========================================
-
-from datetime import datetime, timezone
 
 # ✅ دالة الإشعارات
 def send_telegram_notification(message: str):
@@ -92,11 +90,68 @@ def send_telegram_notification(message: str):
         except Exception as e:
             print(f"Failed to send Telegram notification: {e}")
 
+# ✅ دالة تمييز وفحص حالة المشترك
+async def handle_user_login(user_id: str, username: str = None):
+    user_id_str = str(user_id)
+    
+    # 1. البحث في Supabase
+    res = supabase.table("users_subscriptions").select("*").eq("user_id", user_id_str).execute()
+    
+    # حالة (1): مستخدم جديد لأول مرة
+    if not res.data:
+        new_user_data = {
+            "user_id": user_id_str,
+            "username": username or "Unknown",
+            "is_active": False,
+            "subscription_end": None
+        }
+        supabase.table("users_subscriptions").insert(new_user_data).execute()
+        
+        return {
+            "status": "NEW_USER",
+            "allowed": False,
+            "message": f"👋 أهلاً بك! هذه أول مرة تسجل فيها بالمحرك.\n🆔 رقم آيديك: `{user_id_str}`\n\n⚠️ حسابك غير مفعل حالياً. ارسل هذا الرقم للإدارة لتنشيط اشتراكك."
+        }
+
+    sub = res.data[0]
+    
+    # حالة (2): غير مفعل يدويًا
+    if not sub.get("is_active"):
+        return {
+            "status": "INACTIVE_USER",
+            "allowed": False,
+            "message": f"⛔️ أهلاً بك مجدداً!\nحسابك (`{user_id_str}`) موجود لدينا لكنه غير مفعل حالياً.\nيرجى التواصل مع الدعم لتشغيله."
+        }
+
+    # حالة (3): فحص التاريخ
+    sub_end_str = sub.get("subscription_end")
+    if not sub_end_str:
+        return {
+            "status": "NO_EXPIRY_SET",
+            "allowed": False,
+            "message": "⚠️ اشتراكك غير مكتمل (لا يوجد تاريخ انتهاء). تواصل مع الدعم."
+        }
+
+    sub_end = datetime.fromisoformat(sub_end_str.replace("Z", "+00:00"))
+    if datetime.now(timezone.utc) > sub_end:
+        supabase.table("users_subscriptions").update({"is_active": False}).eq("user_id", user_id_str).execute()
+        return {
+            "status": "EXPIRED_USER",
+            "allowed": False,
+            "message": f"⚠️ انتهت مدة اشتراكك في: ({sub_end.strftime('%Y-%m-%d')}).\nيرجى التجديد للاستمرار."
+        }
+
+    # حالة (4): مفعل
+    return {
+        "status": "ACTIVE_USER",
+        "allowed": True,
+        "message": f"✅ أهلاً بعودتك! اشتراكك فعال ومستمر حتى: {sub_end.strftime('%Y-%m-%d')}"
+    }
+
 # ==========================================
 # 4. معالجة أوامر البوت
 # ==========================================
 
-# ✅ تم إزالة النقطتين الراسيتين من نهاية السطر
 @bot.on(events.NewMessage(pattern='/start'))
 async def start_handler(event):
     user_id = str(event.sender_id)
@@ -112,8 +167,7 @@ async def start_handler(event):
         return # ⛔️ يمنع الانتقال لباقي السكربت
 
     # السماح بالمرور للمستخدم المفعل فقط
-    await event.respond(f"{auth['message']}\n\n🚀 أهلاً بك في المحرك الجبار! اختر العملية المطلوب تنفيذها...")
-# -------------------------------------------------------------
+    await event.respond(f"{auth['message']}\n\n🚀 أهلاً بك في المحرك الجبار! اختر العملية المطلوب تنفيذها...")-----------------------------------------------------------
 # دالة تمييز وفحص المستخدمين (جديد / مفعل / غير مفعل)
 # -------------------------------------------------------------
 async def handle_user_login(user_id: str, username: str = None):
