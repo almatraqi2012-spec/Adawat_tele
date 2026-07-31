@@ -1096,7 +1096,6 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
         send_telegram_notification("❌ لا توجد حسابات مضافة للتشغيل!")
         return
 
-    scraped_users = []
     master_acc = accounts_data[0]
     master_client = TelegramClient(StringSession(master_acc["session_string"]), API_ID, API_HASH)
 
@@ -1113,11 +1112,8 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
         src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
         src_entity = await master_client.get_entity(src_clean)
         
-        user_queue = await scrape_all_types(master_client, src_entity)
-        
-        for u in participants:
-            if not u.bot and not u.deleted:
-                scraped_users.append((u.id, u.access_hash, u.username))
+        # 🟢 استخدام دالة السحب المدمجة مباشرة لجمع قائمة الأعضاء
+        scraped_users = await run_scraper_task(master_client, src_entity)
 
     except Exception as e:
         send_telegram_notification(f"💥 خطأ أثناء سحب الأعضاء: {e}")
