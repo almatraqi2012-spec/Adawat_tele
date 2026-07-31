@@ -729,23 +729,24 @@ async def get_accounts(user_id: str):
 # ==========================================
 # 5. مسارات API لربط الحسابات وتوثيق OTP
 # ==========================================
-
 @app.post("/api/send-code")
 async def send_code(req: PhoneRequest):
-    # 🟢 الفحص المباشر باستخدام الدالة التي أضفتها
     if not check_user_subscription(req.user_id):
         raise HTTPException(status_code=403, detail="عذراً، يجب تفعيل الاشتراك أولاً.")
 
-    # إنشاء كائن الجلسة وإبقاؤه متصلاً
+    # تنظيف رقم الهاتف من المسافات
+    phone = req.phone_number.strip().replace(" ", "")
+
     client = TelegramClient(StringSession(), API_ID, API_HASH)
     await client.connect()
     
     try:
-        sent_code = await client.send_code_request(req.phone_number)
+        sent_code = await client.send_code_request(phone)
         
-        # حفظ كائن client نفسه متصلاً في الذاكرة
-        pending_sessions[req.phone_number] = {
+        # 🟢 الحفظ باستخدام user_id لتفادي تداخل طلبات المشتركين
+        pending_sessions[str(req.user_id)] = {
             "client": client,
+            "phone": phone,
             "phone_code_hash": sent_code.phone_code_hash
         }
         
@@ -756,46 +757,70 @@ async def send_code(req: PhoneRequest):
         }
     except Exception as e:
         await client.disconnect()
-        raise HTTPException(status_code=400, detail=f"خطأ من تليجرام: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"فشل إرسال الكود: {str(e)}")
+
 
 @app.post("/api/verify-code")
 async def verify_code(req: VerifyRequest):
     if not check_user_subscription(req.user_id):
         raise HTTPException(status_code=403, detail="عذراً، يجب تفعيل الاشتراك أولاً.")
 
-    session_data = pending_sessions.get(req.phone_number)
-    if not session_data:
-        raise HTTPException(status_code=400, detail="انتهت مهلة الجلسة أو لم يتم طلب كود، حاول مجدداً.")
+    user_key = str(req.user_id)
+    session_data = pending_sessions.get(user_key)
 
-    # استخدام نفس الاتصال القائم بدون إعادة فتح جلسة جديدة
+    if not session_data:
+        raise HTTPException(
+            status_code=400, 
+            detail="انتهت مهلة الجلسة أو لم تقم بطلب الكود أولاً. حاول طلب الكود من جديد."
+        )
+
     client: TelegramClient = session_data["client"]
     phone_code_hash = session_data["phone_code_hash"]
+    phone = session_data["phone"]
+
+    # التأكد من أن الاتصال ما زال قائماً
+    if not client.is_connected():
+        await client.connect()
 
     try:
+        # إزالة المسافات من كود التحقق المدخل
+        clean_code = req.code.strip().replace(" ", "")
+        
         await client.sign_in(
-            phone=req.phone_number, 
-            code=req.code, 
+            phone=phone, 
+            code=clean_code, 
             phone_code_hash=phone_code_hash
         )
         
-        # استخراج كود الجلسة النهائي للحفظ في Supabase
+        # استخراج الجلسة النهائية
         final_session = client.session.save()
         await client.disconnect()
 
+        # حفظ الحساب في Supabase للمشترك
         supabase.table("telegram_accounts").insert({
             "user_id": req.user_id,
-            "phone": req.phone_number,
+            "phone": phone,
             "session_string": final_session
         }).execute()
 
-        del pending_sessions[req.phone_number]
+        # مسح الجلسة المؤقتة بعد النجاح
+        del pending_sessions[user_key]
         return {"status": "success", "message": "🟢 تم ربط الرقم بنجاح وإضافته للأسطول!"}
         
     except Exception as e:
-        await client.disconnect()
-        if req.phone_number in pending_sessions:
-            del pending_sessions[req.phone_number]
-        raise HTTPException(status_code=400, detail=f"خطأ في إدخال الكود: {str(e)}")
+        # في حال فشل الكود، نترك الجلسة مفتوحة ليجرب المشترك مرة أخرى دون الحاجة لإعادة طلب كود جديد
+        err_msg = str(e)
+        if "SessionPasswordNeededError" in err_msg:
+            raise HTTPException(status_code=400, detail="الحساب محمي بالتحقق بخطوتين (2FA). يرجى إيقاف كلمة السر مؤقتاً ثم إعادة التجربة.")
+        elif "PhoneCodeInvalidError" in err_msg:
+            raise HTTPException(status_code=400, detail="الكود الذي أدخلته غير صحيح. تأكد من الأرقام وأعد المحاولة.")
+        elif "PhoneCodeExpiredError" in err_msg:
+            await client.disconnect()
+            if user_key in pending_sessions:
+                del pending_sessions[user_key]
+            raise HTTPException(status_code=400, detail="انتهت صلاحية الكود. يرجى طلب كود جديد.")
+        else:
+            raise HTTPException(status_code=400, detail=f"خطأ في التحقق: {err_msg}")
         
 @app.post("/api/start-adding")
 async def start_adding(req: AddMembersRequest):
@@ -976,18 +1001,29 @@ async def scrape_all_types(master_client, src_entity):
     # -------------------------------------------------------------
     # 1. المحاولة الأولى: السحب المباشر من قائمة الأعضاء (إن أمكن)
     # -------------------------------------------------------------
-    try:
-        participants = await master_client.get_participants(src_entity, limit=3000)
-        for u in participants:
-            if not u.bot and not u.deleted:
-                seen_ids.add(u.id)
-                scraped_users.append((u.id, u.access_hash, u.username))
-        
-        if scraped_users:
-            print(f"✅ [سحب عادي] تم جلب {len(scraped_users)} عضو من القائمة المباشرة.")
-    except Exception as e:
-        print(f"⚠️ القائمة المباشرة غير متاحة أو الأعضاء مخفيون: {e}")
+    # 🟢 1. تعريف القوائم والمتغيرات بقيم فارغة أولاً لتجنب NameError
+participants = []
+scraped_users = []
+seen_ids = set()
 
+try:
+    # 🟢 2. محاولة جلب الأعضاء
+    participants = await master_client.get_participants(src_entity, limit=3000)
+    
+    for u in participants:
+        if not u.bot and not u.deleted:
+            seen_ids.add(u.id)
+            scraped_users.append((u.id, u.access_hash, u.username))
+    
+    if scraped_users:
+        print(f"✅ [سحب عادي] تم جلب {len(scraped_users)} عضو من القائمة المباشرة.")
+    else:
+        print("⚠️ لم يتم العثور على أعضاء حقيقيين في هذه المجموعة.")
+
+except Exception as e:
+    print(f"💥 خطأ أثناء سحب الأعضاء (القائمة المباشرة غير متاحة أو مخفية): {e}")
+
+# 🟢 3. الآن السكربت يستطيع إكمال عمله بأمان دون أن ينهار
     # -------------------------------------------------------------
     # 2. المحاولة الثانية: العمق الفائق (فحص 5000 رسالة + إيموجي)
     # -------------------------------------------------------------
