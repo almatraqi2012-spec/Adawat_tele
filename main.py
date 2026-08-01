@@ -326,7 +326,6 @@ async def serve_dashboard():
         </script>
     </body>
     </html>
-    """
 
         <!-- نافذة التسجيل -->
         <div id="registerModal" class="modal" style="display: flex;">
