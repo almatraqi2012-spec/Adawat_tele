@@ -295,7 +295,7 @@ async function sendCode() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ 
                 user_id: USER_ID, 
-                phone_number: phone // 👈 المطابقة هنا مع PhoneRequest
+                phone_number: phone //  المطابقة هنا مع PhoneRequest
             })
         });
         const data = await res.json();
