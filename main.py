@@ -1,37 +1,37 @@
+# ==========================================
+# 🟢 القسم 1: المكتبات والتهيئة (Imports & Setup)
+# ==========================================
 import os
 import re
-import asyncio
-import random
 import uuid
+import random
+import asyncio
 import requests
-from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone, timedelta
+from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from supabase import create_client, Client
 
-from telethon import TelegramClient, events
+from telethon import TelegramClient
 from telethon.sessions import StringSession
-from telethon.tl.functions.channels import InviteToChannelRequest, JoinChannelRequest
+from telethon.tl.functions.channels import JoinChannelRequest, InviteToChannelRequest
 from telethon.tl.functions.messages import ImportChatInviteRequest
-from telethon.tl.types import InputPeerUser
 from telethon.errors import (
-    PeerFloodError,
-    UserPrivacyRestrictedError,
-    FloodWaitError,
-    UserNotMutualContactError,
-    UserIdInvalidError,
-    UserChannelsTooMuchError,
-    UserBotError,
     UserAlreadyParticipantError,
-    ChatAdminRequiredError
+    UserPrivacyRestrictedError,
+    UserNotMutualContactError,
+    ChatAdminRequiredError,
+    FloodWaitError,
+    PeerFloodError
 )
 
-# ==========================================
-# 1. الإعدادات والربط
-# ==========================================
+app = FastAPI(title="Dragon Engine Pro API")
+templates = Jinja2Templates(directory="templates")
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://juuleypxvvcfgjdikpwu.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_Kh6iN4Aq6X6gLNcElNzgRg_CjlLMaZL")
 
@@ -42,34 +42,21 @@ OXAPAY_MERCHANT_KEY = os.getenv("OXAPAY_MERCHANT_KEY", "VVWSV1-17YEGL-05LITH-PLZ
 ADMIN_TELEGRAM_BOT_TOKEN = os.getenv("ADMIN_TELEGRAM_BOT_TOKEN", "8725004596:AAF7fH3qyLq4nhRRp3RIbVGQj8bMo632oM8")
 ADMIN_CHAT_ID = os.getenv("ADMIN_CHAT_ID", "6016547718")
 BOT_USERNAME = os.getenv("BOT_USERNAME", "Shrkatbot")
+MONTHLY_PRICE_USD = 80
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-# 🟢 إنشاء كائن البوت بدون تشغيله المباشر
-bot = TelegramClient('admin_bot_session', API_ID, API_HASH)
-
-# 🟢 إدارة تشغيل البوت بسلاسة مع FastAPI
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # تشغيل البوت عند بدء السيرفر
-    await bot.start(bot_token=ADMIN_TELEGRAM_BOT_TOKEN)
-    print("🟢 Admin Bot Started Successfully!")
-    yield
-    # إيقاف البوت عند إغلاق السيرفر
-    await bot.disconnect()
-
-app = FastAPI(title="Dragon Engine - Heavy Duty Edition", lifespan=lifespan)
-
 pending_sessions = {}
-MONTHLY_PRICE_USD = 80
-USDT_ADDRESS = "TLtLuhkU2kkkR1Wz1TtrBTpoNRTNviYpsA"
+
 
 # ==========================================
-# 2. النماذج (Data Models)
+# 🟢 القسم 2: نماذج البيانات والدوال المساعدة (Models & Helpers)
 # ==========================================
 class RegisterUserRequest(BaseModel):
     full_name: str
     username_or_phone: str
+
+class PaymentRequest(BaseModel):
+    user_id: str
 
 class PhoneRequest(BaseModel):
     user_id: str
@@ -86,578 +73,32 @@ class AddMembersRequest(BaseModel):
     source_group: str
     target_group: str
 
-class PaymentRequest(BaseModel):
+class DeleteAccountRequest(BaseModel):
     user_id: str
+    phone: str
 
-# ==========================================
-# 3. الوظائف المساعدة والاشتراكات
-# ==========================================
-
-def send_telegram_notification(message: str):
-    if ADMIN_TELEGRAM_BOT_TOKEN != "YOUR_BOT_TOKEN" and ADMIN_CHAT_ID != "YOUR_TELEGRAM_CHAT_ID":
-        try:
-            url = f"https://api.telegram.org/bot{ADMIN_TELEGRAM_BOT_TOKEN}/sendMessage"
-            requests.post(url, json={"chat_id": ADMIN_CHAT_ID, "text": message, "parse_mode": "HTML"})
-        except Exception as e:
-            print(f"Failed to send Telegram notification: {e}")
-
-async def handle_user_login(user_id: str, username: str = None):
+def check_user_subscription(user_id: str) -> bool:
     user_id_str = str(user_id)
-    
-    res = supabase.table("users_subscriptions").select("*").eq("user_id", user_id_str).execute()
-    
-    if not res.data:
-        new_user_data = {
-            "user_id": user_id_str,
-            "username": username or "Unknown",
-            "is_active": False,
-            "subscription_end": None
-        }
-        supabase.table("users_subscriptions").insert(new_user_data).execute()
-        
-        return {
-            "status": "NEW_USER",
-            "allowed": False,
-            "message": f"👋 أهلاً بك! هذه أول مرة تسجل فيها بالمحرك.\n🆔 رقم آيديك: `{user_id_str}`\n\n⚠️ حسابك غير مفعل حالياً. ارسل هذا الرقم للإدارة لتنشيط اشتراكك."
-        }
+    res = supabase.table("users_subscriptions").select("is_active").eq("user_id", user_id_str).execute()
+    if res.data and res.data[0].get("is_active"):
+        return True
+    return False
 
-    sub = res.data[0]
-    
-    if not sub.get("is_active"):
-        return {
-            "status": "INACTIVE_USER",
-            "allowed": False,
-            "message": f"⛔️ أهلاً بك مجدداً!\nحسابك (`{user_id_str}`) موجود لدينا لكنه غير مفعل حالياً.\nيرجى التواصل مع الدعم لتشغيله."
-        }
+def send_telegram_notification(text: str):
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {"chat_id": ADMIN_CHAT_ID, "text": text, "parse_mode": "HTML"}
+        requests.post(url, json=payload, timeout=5)
+    except Exception as e:
+        print(f"فشل إرسال الإشعار: {e}")
 
-    sub_end_str = sub.get("subscription_end")
-    if not sub_end_str:
-        return {
-            "status": "NO_EXPIRY_SET",
-            "allowed": False,
-            "message": "⚠️ اشتراكك غير مكتمل (لا يوجد تاريخ انتهاء). تواصل مع الدعم."
-        }
-
-    sub_end = datetime.fromisoformat(sub_end_str.replace("Z", "+00:00"))
-    if datetime.now(timezone.utc) > sub_end:
-        supabase.table("users_subscriptions").update({"is_active": False}).eq("user_id", user_id_str).execute()
-        return {
-            "status": "EXPIRED_USER",
-            "allowed": False,
-            "message": f"⚠️ انتهت مدة اشتراكك في: ({sub_end.strftime('%Y-%m-%d')}).\nيرجى التجديد للاستمرار."
-        }
-
-    return {
-        "status": "ACTIVE_USER",
-        "allowed": True,
-        "message": f"✅ أهلاً بعودتك! اشتراكك فعال ومستمر حتى: {sub_end.strftime('%Y-%m-%d')}"
-    }
 
 # ==========================================
-# 4. معالجة أوامر البوت
-# ==========================================
-
-@bot.on(events.NewMessage(pattern='/start'))
-async def start_handler(event):
-    user_id = str(event.sender_id)
-    sender = await event.get_sender()
-    username = getattr(sender, 'username', None)
-
-    auth = await handle_user_login(user_id, username)
-
-    if not auth["allowed"]:
-        await event.respond(auth["message"])
-        return
-
-    await event.respond(f"{auth['message']}\n\n🚀 أهلاً بك في المحرك الجبار! اختر العملية المطلوب تنفيذها...")
-# دالة تمييز وفحص المستخدمين (جديد / مفعل / غير مفعل)
-# -------------------------------------------------------------
-async def handle_user_login(user_id: str, username: str = None):
-    user_id_str = str(user_id)
-    
-    # 1. البحث في Supabase
-    res = supabase.table("users_subscriptions").select("*").eq("user_id", user_id_str).execute()
-    
-    # حالة (1): مستخدم جديد لأول مرة
-    if not res.data:
-        new_user_data = {
-            "user_id": user_id_str,
-            "username": username or "Unknown",
-            "is_active": False,
-            "subscription_end": None
-        }
-        supabase.table("users_subscriptions").insert(new_user_data).execute()
-        
-        return {
-            "status": "NEW_USER",
-            "allowed": False,
-            "message": f"👋 أهلاً بك! هذه أول مرة تسجل فيها بالمحرك.\n🆔 رقم آيديك: `{user_id_str}`\n\n⚠️ حسابك غير مفعل حالياً. ارسل هذا الرقم للإدارة لتنشيط اشتراكك."
-        }
-
-    sub = res.data[0]
-    
-    # حالة (2): غير مفعل يدويًا
-    if not sub.get("is_active"):
-        return {
-            "status": "INACTIVE_USER",
-            "allowed": False,
-            "message": f"⛔️ أهلاً بك مجدداً!\nحسابك (`{user_id_str}`) موجود لدينا لكنه غير مفعل حالياً.\nيرجى التواصل مع الدعم لتشغيله."
-        }
-
-    # حالة (3): فحص التاريخ
-    sub_end_str = sub.get("subscription_end")
-    if not sub_end_str:
-        return {
-            "status": "NO_EXPIRY_SET",
-            "allowed": False,
-            "message": "⚠️ اشتراكك غير مكتمل (لا يوجد تاريخ انتهاء). تواصل مع الدعم."
-        }
-
-    sub_end = datetime.fromisoformat(sub_end_str.replace("Z", "+00:00"))
-    if datetime.now(timezone.utc) > sub_end:
-        supabase.table("users_subscriptions").update({"is_active": False}).eq("user_id", user_id_str).execute()
-        return {
-            "status": "EXPIRED_USER",
-            "allowed": False,
-            "message": f"⚠️ انتهت مدة اشتراكك في: ({sub_end.strftime('%Y-%m-%d')}).\nيرجى التجديد للاستمرار."
-        }
-
-    # حالة (4): مفعل
-    return {
-        "status": "ACTIVE_USER",
-        "allowed": True,
-        "message": f"✅ أهلاً بعودتك! اشتراكك فعال ومستمر حتى: {sub_end.strftime('%Y-%m-%d')}"
-    }
-# ==========================================
-# 4. الواجهة التفاعلية
-
-# ==========================================
-# 4. الواجهة التفاعلية
+# 🟢 القسم 3: مسارات المستخدمين والاشتراكات (User & Auth APIs)
 # ==========================================
 @app.get("/", response_class=HTMLResponse)
-async def serve_dashboard():
-    return f"""
-    <!DOCTYPE html>
-    <html lang="ar" dir="rtl">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Dragon Engine Pro - المحرك الخارق</title>
-        <style>
-            body {{ font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; padding: 20px; display: flex; justify-content: center; }}
-            .card {{ background: #111827; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.6); border: 1px solid #1f2937; margin-bottom: 20px; }}
-            h2 {{ color: #38bdf8; text-align: center; margin-bottom: 15px; font-size: 22px; font-weight: 800; }}
-            
-            .sub-box {{ background: #1e1b4b; border: 1px solid #6366f1; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 20px; }}
-            .sub-status {{ font-weight: bold; font-size: 16px; margin-bottom: 10px; }}
-            .active {{ color: #34d399; }}
-            .inactive {{ color: #f87171; }}
-            
-            .counter-box {{ background: #0f172a; border: 1px solid #38bdf8; border-radius: 10px; padding: 12px; text-align: center; margin-bottom: 20px; font-size: 14px; color: #94a3b8; }}
-            .counter-box span {{ font-size: 22px; font-weight: bold; color: #38bdf8; }}
-
-            label {{ display: block; margin-top: 12px; font-size: 13px; color: #94a3b8; }}
-            input {{ width: 100%; padding: 12px; margin-top: 6px; border-radius: 8px; border: 1px solid #374151; background: #030712; color: white; box-sizing: border-box; font-size: 15px; }}
-            button {{ width: 100%; padding: 12px; margin-top: 10px; border: none; border-radius: 8px; background: #0284c7; color: white; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; }}
-            button:hover {{ opacity: 0.9; transform: translateY(-1px); }}
-            .btn-green {{ background: #059669; }}
-            .btn-orange {{ background: #ea580c; }}
-            .btn-purple {{ background: #7c3aed; }}
-            
-            .status {{ margin-top: 15px; padding: 12px; border-radius: 8px; font-size: 14px; display: none; line-height: 1.5; }}
-            .success {{ background: #064e3b; color: #34d399; border: 1px solid #059669; }}
-            .error {{ background: #4c0519; color: #fecdd3; border: 1px solid #9f1239; }}
-            hr {{ border: 0; height: 1px; background: #1f2937; margin: 20px 0; }}
-
-            .modal {{ display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(4px); }}
-            .modal-content {{ background: #111827; padding: 25px; border-radius: 14px; max-width: 420px; width: 90%; text-align: center; border: 1px solid #38bdf8; }}
-            .crypto-addr {{ background: #030712; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 13px; color: #38bdf8; word-break: break-all; margin: 10px 0; border: 1px dashed #374151; }}
-        </style>
-    </head>
-    <body>
-
-        <!-- نافذة التسجيل -->
-        <div id="registerModal" class="modal" style="display: flex;">
-            <div class="modal-content">
-                <h3 style="color: #38bdf8; margin-top:0;">⚡ دخول المنظومة الخارقة</h3>
-                <p style="font-size: 13px; color: #94a3b8;">أدخل اسمك ومعرفك للتسجيل أو استعادة أسطولك المربوط</p>
-                
-                <label style="text-align: right;">الاسم الكامل:</label>
-                <input type="text" id="regFullName" placeholder="أحمد علي">
-                
-                <label style="text-align: right;">اسم المستخدم أو رقم التلغرام:</label>
-                <input type="text" id="regUserContact" placeholder="@username أو +966500000000">
-                
-                <button onclick="submitRegister()" class="btn-green">دخول / استعادة الحساب</button>
-            </div>
-        </div>
-
-        <!-- نافذة الدفع اليدوي -->
-        <div id="manualPayModal" class="modal">
-            <div class="modal-content">
-                <h3 style="color: #38bdf8; margin-top:0;">💎 الدفع اليدوي عبر USDT</h3>
-                <p style="font-size: 14px; color: #e2e8f0;">حول <b>$80 USDT</b> على شبكة (TRC20):</p>
-                
-                <div class="crypto-addr" id="cryptoAddress">{USDT_ADDRESS}</div>
-                <button onclick="copyCrypto()" style="padding: 6px; font-size: 12px; background: #374151;">نسخ العنوان 📋</button>
-                
-                <hr>
-                <p style="font-size: 13px; color: #94a3b8;">بعد التحويل، اذكر ID حسابك للبوت لتفعيلك:</p>
-                
-                <button onclick="redirectToBot()" class="btn-green">📩 إرسال إثبات الدفع للبوت</button>
-                <button onclick="closeModal('manualPayModal')" style="background: #4b5563; margin-top: 5px;">إغلاق</button>
-            </div>
-        </div>
-
-        <!-- الواجهة الرئيسية -->
-        <div class="card">
-            <h2>🐉 Dragon Engine Pro</h2>
-
-            <!-- 🟢 1. بطاقة إحصائيات المشترك -->
-            <div class="counter-box" style="display: flex; justify-content: space-around; gap: 8px;">
-                <div>
-                    <div style="font-size: 11px;">📱 الحسابات</div>
-                    <span id="acc-count">0</span>
-                </div>
-                <div>
-                    <div style="font-size: 11px;">🚀 الإضافات</div>
-                    <span id="total-adds">0</span>
-                </div>
-                <div>
-                    <div style="font-size: 11px;">⭐ الاشتراك</div>
-                    <span id="sub-status" style="font-size: 14px;">-</span>
-                </div>
-            </div>
-
-            <h2>🔥 Dragon Heavy Engine v2.0</h2>
-            
-            <div class="sub-box">
-                <div style="font-size: 13px; color: #94a3b8; margin-bottom: 5px;">المستخدم الحالي: <b id="displayUserName" style="color: #f8fafc;">...</b></div>
-                <div class="sub-status">حالة الاشتراك الشهري ($80): <span id="subText" class="inactive">جاري التحقق...</span></div>
-                
-                <button onclick="payOxaPay()" class="btn-orange">💳 دفع تلقائي OxaPay ($80)</button>
-                <button onclick="openModal('manualPayModal')" class="btn-purple">💎 دفع يدوي USDT (TRC20)</button>
-                <button onclick="logout()" style="background: #dc2626; margin-top: 5px; font-size: 12px; padding: 6px;">تبديل الحساب / خروج</button>
-            </div>
-
-            <div class="counter-box">
-                🚀 أسطول الحسابات النشطة: <span id="accountCount">0</span> حساب جاهز
-            </div>
-            
-            <h3>1️⃣ إضافة أرقام الأسطول</h3>
-            <label>رقم الهاتف (مع رمز الدولة):</label>
-            <input type="text" id="phone" placeholder="+966500000000">
-            <button onclick="sendCode()">أرسل كود التحقق</button>
-            
-            <div id="verifyBox" style="display:none;">
-                <label>كود التحقق الواصل للتليجرام:</label>
-                <input type="text" id="otpCode" placeholder="12345">
-                <button onclick="verifyCode()" class="btn-green">ربط الرقم بالأسطول 🛡️</button>
-            </div>
-
-            <!-- قائمة الحسابات المضافة + زراير الحذف -->
-            <div style="margin-top: 20px; background: #0f172a; padding: 15px; border-radius: 10px; border: 1px solid #1f2937;">
-                <h3 style="margin-top:0; color: #38bdf8; font-size: 15px;">📱 قائمة أرقام الأسطول المضافة</h3>
-                <div id="accountsList" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
-                    <p style="color: #94a3b8; font-size: 13px; text-align: center;">جاري جلب الأرقام...</p>
-                </div>
-            </div>
-            
-            <hr>
-        </div>
-
-        <!-- 🟢 2. كود الجافاسكربت المصمم للعمل داخل f-string في بايثون -->
-        <script>
-            const tg = window.Telegram?.WebApp;
-            const currentUserId = tg?.initDataUnsafe?.user?.id || "";
-
-            async function loadUserStats(userId) {{
-                if (!userId) return;
-                try {{
-                    const response = await fetch('/api/user-stats?user_id=' + userId);
-                    const data = await response.json();
-
-                    if (data.status === "success") {{
-                        const stats = data.stats;
-                        
-                        document.getElementById("acc-count").innerText = stats.accounts_count;
-                        document.getElementById("total-adds").innerText = stats.total_adds;
-                        document.getElementById("sub-status").innerText = stats.is_subscribed ? "🟢 نشط" : "🔴 منتهي";
-                    }}
-                }} catch (error) {{
-                    console.error("فشل جلب الإحصائيات:", error);
-                }}
-            }}
-
-            document.addEventListener("DOMContentLoaded", () => {{
-                if (currentUserId) {{
-                    loadUserStats(currentUserId);
-                }}
-            }});
-        </script>
-    </body>
-    </html>
-    
-        
-            <h3>2️⃣ إطلاق الحملة الخارقة (توازٍ كامل)</h3>
-            <label>الجروب المصدر (السحب منه):</label>
-            <input type="text" id="sourceGroup" placeholder="https://t.me/source_group">
-            
-            <label>الجروب الهدف (الإضافة إليه):</label>
-            <input type="text" id="targetGroup" placeholder="https://t.me/target_group">
-            
-            <button onclick="startAdding()" class="btn-green">⚡ إطلاق السحب والإضافة التوافقية</button>
-            
-            <div id="statusBox" class="status"></div>
-        </div>
-
-        <script>
-            let USER_ID = localStorage.getItem("user_device_id");
-            let USER_NAME = localStorage.getItem("user_full_name");
-
-            if (USER_ID && USER_NAME) {{
-                document.getElementById("registerModal").style.display = "none";
-                document.getElementById("displayUserName").innerText = USER_NAME;
-            }}
-
-            let phoneHash = "";
-
-            async function submitRegister() {{
-                const fullNameInput = document.getElementById("regFullName");
-                const contactInput = document.getElementById("regUserContact");
-
-                const fullName = fullNameInput ? fullNameInput.value.trim() : "";
-                const contact = contactInput ? contactInput.value.trim().toLowerCase() : "";
-
-                if (!fullName || !contact) {{
-                    return alert("يرجى إدخال اسمك واسم المستخدم/الرقم بشكل صحيح");
-                }}
-
-                try {{
-                    showStatus("جاري البحث عن الحساب واستعادة البيانات...");
-                    
-                    const res = await fetch("/api/register-user", {{
-                        method: "POST",
-                        headers: {{ "Content-Type": "application/json" }},
-                        body: JSON.stringify({{
-                            full_name: fullName,
-                            username_or_phone: contact
-                        }})
-                    }});
-
-                    const data = await res.json();
-                    
-                    if (res.ok && data.user_id) {{
-                        localStorage.setItem("user_device_id", data.user_id);
-                        localStorage.setItem("user_full_name", fullName);
-                        localStorage.setItem("user_contact", contact);
-                        
-                        USER_ID = data.user_id;
-
-                        document.getElementById("registerModal").style.display = "none";
-                        document.getElementById("displayUserName").innerText = fullName;
-                        
-                        await checkSub();
-                        await updateCount();
-                        await loadAccountsList();
-
-                        alert(data.message || "تم تسجيل الدخول بنجاح!");
-                    }} else {{
-                        alert("خطأ: " + (data.detail || "تعذر التسجيل"));
-                    }}
-                }} catch (err) {{
-                    alert("تعذر الاتصال بالسيرفر، تأكد من الاتصال بالإنترنت.");
-                }}
-            }}
-
-            function logout() {{
-                localStorage.clear();
-                location.reload();
-            }}
-
-            async function checkSub() {{
-                if(!USER_ID) return;
-                try {{
-                    const res = await fetch(`/api/subscription-status?user_id=${{USER_ID}}`);
-                    const data = await res.json();
-                    const el = document.getElementById("subText");
-                    if(data.is_active) {{
-                        el.innerText = "نشط 🟢 (حتى " + data.ends_at + ")";
-                        el.className = "active";
-                    }} else {{
-                        el.innerText = "غير مفعل 🔴";
-                        el.className = "inactive";
-                    }}
-                }} catch(e){{}}
-            }}
-
-            async function updateCount() {{
-                if(!USER_ID) return;
-                try {{
-                    const res = await fetch(`/api/account-count?user_id=${{USER_ID}}`);
-                    const data = await res.json();
-                    if(res.ok) document.getElementById("accountCount").innerText = data.count;
-                }} catch(e){{}}
-            }}
-
-            async function loadAccountsList() {{
-                if (!USER_ID) return;
-                const container = document.getElementById("accountsList");
-                try {{
-                    const res = await fetch(`/api/get-accounts?user_id=${{USER_ID}}`);
-                    const data = await res.json();
-                    
-                    if (res.ok && data.accounts && data.accounts.length > 0) {{
-                        container.innerHTML = "";
-                        data.accounts.forEach(acc => {{
-                            const div = document.createElement("div");
-                            div.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155;";
-                            div.innerHTML = `
-                                <span style="font-weight: bold; color: #f8fafc; font-size: 14px;">📱 ${{acc.phone || acc.phone_number}}</span>
-                                <button onclick="deleteAccount('${{acc.phone || acc.phone_number}}')" style="background: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; width: auto; margin: 0;">🗑️ حذف</button>
-                            `;
-                            container.appendChild(div);
-                        }});
-                    }} else {{
-                        container.innerHTML = '<p style="color: #94a3b8; font-size: 13px; text-align: center;">لا توجد أرقام مضافة في الأسطول حالياً</p>';
-                    }}
-                }} catch (e) {{
-                    container.innerHTML = '<p style="color: #ef4444; font-size: 13px; text-align: center;">فشل تحميل قائمة الأرقام</p>';
-                }}
-            }}
-
-            async function deleteAccount(phoneNumber) {{
-                if (!confirm(`هل أنت تأكد من حذف الرقم ${{phoneNumber}} من الأسطول؟`)) return;
-
-                showStatus("جاري حذف الرقم من قاعدة البيانات...");
-                try {{
-                    const res = await fetch("/api/delete-account", {{
-                        method: "POST",
-                        headers: {{ "Content-Type": "application/json" }},
-                        body: JSON.stringify({{ user_id: USER_ID, phone: phoneNumber }})
-                    }});
-                    const data = await res.json();
-                    if (res.ok) {{
-                        showStatus(data.message || "تم حذف الرقم بنجاح!");
-                        await updateCount();
-                        await loadAccountsList();
-                    }} else {{
-                        showStatus(data.detail || "حدث خطأ أثناء الحذف", true);
-                    }}
-                }} catch (e) {{
-                    showStatus("خطأ في الاتصال بالسيرفر أثناء الحذف", true);
-                }}
-            }}
-
-            if (USER_ID) {{
-                checkSub();
-                updateCount();
-                loadAccountsList();
-            }}
-
-            function openModal(id) {{ document.getElementById(id).style.display = "flex"; }}
-            function closeModal(id) {{ document.getElementById(id).style.display = "none"; }}
-
-            function copyCrypto() {{
-                const addr = document.getElementById("cryptoAddress").innerText;
-                navigator.clipboard.writeText(addr);
-                alert("تم نسخ العنوان بنجاح!");
-            }}
-
-            function redirectToBot() {{
-                const botUsername = "{BOT_USERNAME}";
-                const startParam = `pay_${{USER_ID}}`;
-                window.location.href = `https://t.me/${{botUsername}}?start=${{startParam}}`;
-            }}
-
-            function showStatus(msg, isError = false) {{
-                const box = document.getElementById("statusBox");
-                box.style.display = "block";
-                box.className = "status " + (isError ? "error" : "success");
-                box.innerText = msg;
-            }}
-
-            async function payOxaPay() {{
-                showStatus("جاري تجهيز بوابة OxaPay...");
-                const res = await fetch("/api/create-oxapay-payment", {{
-                    method: "POST",
-                    headers: {{"Content-Type": "application/json"}},
-                    body: JSON.stringify({{user_id: USER_ID}})
-                }});
-                const data = await res.json();
-                if(res.ok && data.pay_url) {{
-                    window.location.href = data.pay_url;
-                }} else {{
-                    showStatus(data.detail || "فشل إنشاء بوابة الدفع", true);
-                }}
-            }}
-
-            async function sendCode() {{
-                const phone = document.getElementById("phone").value.trim();
-                if(!phone) return alert("أدخل الرقم أولاً");
-
-                showStatus("جاري إرسال الكود مع التشفير...");
-                const res = await fetch("/api/send-code", {{
-                    method: "POST",
-                    headers: {{"Content-Type": "application/json"}},
-                    body: JSON.stringify({{user_id: USER_ID, phone_number: phone}})
-                }});
-                const data = await res.json();
-                if(res.ok) {{
-                    phoneHash = data.phone_code_hash;
-                    document.getElementById("verifyBox").style.display = "block";
-                    showStatus(data.message);
-                }} else {{
-                    showStatus(data.detail || "حدث خطأ", true);
-                }}
-            }}
-
-            async function verifyCode() {{
-                const phone = document.getElementById("phone").value.trim();
-                const code = document.getElementById("otpCode").value.trim();
-
-                showStatus("جاري اختبار الجلسة وحفظ الرقم...");
-                const res = await fetch("/api/verify-code", {{
-                    method: "POST",
-                    headers: {{"Content-Type": "application/json"}},
-                    body: JSON.stringify({{user_id: USER_ID, phone_number: phone, phone_code_hash: phoneHash, code: code}})
-                }});
-                const data = await res.json();
-                if(res.ok) {{
-                    showStatus(data.message);
-                    await updateCount();
-                    await loadAccountsList();
-                }} else {{
-                    showStatus(data.detail, true);
-                }}
-            }}
-
-            async function startAdding() {{
-                const source = document.getElementById("sourceGroup").value.trim();
-                const target = document.getElementById("targetGroup").value.trim();
-
-                if(!source || !target) return alert("يرجى وضع روابط المجموعات المصدر والهدف");
-
-                showStatus("🚀 تم إطلاق الحملة! الحسابات تعمل الآن بالخلفية وتضيف الأعضاء لجروبك الحقيقي...");
-                const res = await fetch("/api/start-adding", {{
-                    method: "POST",
-                    headers: {{"Content-Type": "application/json"}},
-                    body: JSON.stringify({{user_id: USER_ID, source_group: source, target_group: target}})
-                }});
-                const data = await res.json();
-                if(res.ok) {{
-                    showStatus(data.message);
-                }} else {{
-                    showStatus(data.detail, true);
-                }}
-            }}
-        </script>
-    </body>
-    </html>
-    """
-# ==========================================
-# 5. APIs إدارة الحسابات
-# ==========================================
+async def serve_dashboard(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 @app.post("/api/register-user")
 async def register_user(req: RegisterUserRequest):
@@ -668,7 +109,6 @@ async def register_user(req: RegisterUserRequest):
         if not clean_contact or not clean_name:
             raise HTTPException(status_code=400, detail="يرجى إدخال البيانات بشكل صحيح")
 
-        # 1. البحث عن المستخدم سلفاً في جدول users1
         existing = supabase.table("users1").select("user_id").eq("username_or_phone", clean_contact).execute()
         
         if existing.data and len(existing.data) > 0:
@@ -679,17 +119,14 @@ async def register_user(req: RegisterUserRequest):
                 "message": "مرحباً بعودتك! تم العثور على حسابك بنجاح 🟢"
             }
 
-        # 2. إنشاء معرف جديد للحساب
         user_id = 'user_' + uuid.uuid4().hex[:9]
         
-        # 3. حفظ بيانات المستخدم الأساسية
         supabase.table("users1").insert({
             "user_id": user_id,
             "full_name": clean_name,
             "username_or_phone": clean_contact
         }).execute()
 
-        # 4. إدراج سطر جديد في جدول الاشتراكات برقم الـ user_id الجديد (غير مفعل وبانتهاء غير محدد)
         supabase.table("users_subscriptions").insert({
             "user_id": user_id,
             "username": clean_contact,
@@ -697,7 +134,6 @@ async def register_user(req: RegisterUserRequest):
             "subscription_end": None
         }).execute()
 
-        # 5. إرسال إشعار التنبيه على تليجرام للإدارة لتفعيل الحساب
         send_telegram_notification(
             f"🚨 <b>مشترك جديد يسجل في المنصة!</b>\n"
             f"👤 <b>الاسم:</b> {clean_name}\n"
@@ -714,12 +150,12 @@ async def register_user(req: RegisterUserRequest):
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-        
+
 @app.get("/api/subscription-status")
 async def subscription_status(user_id: str):
     res = supabase.table("users_subscriptions").select("*").eq("user_id", user_id).execute()
     if res.data and res.data[0].get("is_active"):
-        end_date = res.data[0].get("subscription_end", "")[:10]
+        end_date = (res.data[0].get("subscription_end") or "")[:10]
         return {"is_active": True, "ends_at": end_date}
     return {"is_active": False}
 
@@ -759,20 +195,15 @@ async def oxapay_webhook(request: Request):
         
     return {"status": "ok"}
 
+
+# ==========================================
+# 🟢 القسم 4: إدارة وتوثيق أرقام تليجرام (Telegram Accounts APIs)
+# ==========================================
 @app.get("/api/account-count")
 async def get_account_count(user_id: str):
     response = supabase.table("telegram_accounts").select("id", count="exact").eq("user_id", user_id).execute()
     return {"count": response.count if response.count is not None else len(response.data)}
-    
-def check_user_subscription(user_id: str) -> bool:
-    user_id_str = str(user_id)
-    res = supabase.table("users_subscriptions").select("is_active").eq("user_id", user_id_str).execute()
-    if res.data and res.data[0].get("is_active"):
-        return True
-    return False
-# ----------------------------------------------------
-# جديد: API جلب قائمة الحسابات المضافة للمستخدم
-# ----------------------------------------------------
+
 @app.get("/api/get-accounts")
 async def get_accounts(user_id: str):
     try:
@@ -781,24 +212,30 @@ async def get_accounts(user_id: str):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-# ==========================================
-# 5. مسارات API لربط الحسابات وتوثيق OTP
-# ==========================================
+@app.post("/api/delete-account")
+async def delete_account(req: DeleteAccountRequest):
+    try:
+        supabase.table("telegram_accounts") \
+            .delete() \
+            .eq("user_id", req.user_id) \
+            .eq("phone", req.phone) \
+            .execute()
+        return {"status": "success", "message": f"تم حذف الحساب {req.phone} بنجاح!"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/api/send-code")
 async def send_code(req: PhoneRequest):
     if not check_user_subscription(req.user_id):
         raise HTTPException(status_code=403, detail="عذراً، يجب تفعيل الاشتراك أولاً.")
 
-    # تنظيف رقم الهاتف من المسافات
     phone = req.phone_number.strip().replace(" ", "")
-
     client = TelegramClient(StringSession(), API_ID, API_HASH)
     await client.connect()
     
     try:
         sent_code = await client.send_code_request(phone)
         
-        # 🟢 الحفظ باستخدام user_id لتفادي تداخل طلبات المشتركين
         pending_sessions[str(req.user_id)] = {
             "client": client,
             "phone": phone,
@@ -813,7 +250,6 @@ async def send_code(req: PhoneRequest):
     except Exception as e:
         await client.disconnect()
         raise HTTPException(status_code=400, detail=f"فشل إرسال الكود: {str(e)}")
-
 
 @app.post("/api/verify-code")
 async def verify_code(req: VerifyRequest):
@@ -833,12 +269,10 @@ async def verify_code(req: VerifyRequest):
     phone_code_hash = session_data["phone_code_hash"]
     phone = session_data["phone"]
 
-    # التأكد من أن الاتصال ما زال قائماً
     if not client.is_connected():
         await client.connect()
 
     try:
-        # إزالة المسافات من كود التحقق المدخل
         clean_code = req.code.strip().replace(" ", "")
         
         await client.sign_in(
@@ -847,23 +281,19 @@ async def verify_code(req: VerifyRequest):
             phone_code_hash=phone_code_hash
         )
         
-        # استخراج الجلسة النهائية
         final_session = client.session.save()
         await client.disconnect()
 
-        # حفظ الحساب في Supabase للمشترك
         supabase.table("telegram_accounts").insert({
             "user_id": req.user_id,
             "phone": phone,
             "session_string": final_session
         }).execute()
 
-        # مسح الجلسة المؤقتة بعد النجاح
         del pending_sessions[user_key]
         return {"status": "success", "message": "🟢 تم ربط الرقم بنجاح وإضافته للأسطول!"}
         
     except Exception as e:
-        # في حال فشل الكود، نترك الجلسة مفتوحة ليجرب المشترك مرة أخرى دون الحاجة لإعادة طلب كود جديد
         err_msg = str(e)
         if "SessionPasswordNeededError" in err_msg:
             raise HTTPException(status_code=400, detail="الحساب محمي بالتحقق بخطوتين (2FA). يرجى إيقاف كلمة السر مؤقتاً ثم إعادة التجربة.")
@@ -876,51 +306,11 @@ async def verify_code(req: VerifyRequest):
             raise HTTPException(status_code=400, detail="انتهت صلاحية الكود. يرجى طلب كود جديد.")
         else:
             raise HTTPException(status_code=400, detail=f"خطأ في التحقق: {err_msg}")
-            
-@app.get("/api/user-stats")
-async def get_user_stats(user_id: str):
-    try:
-        user_id_str = str(user_id)
 
-        # 1. جلب عدد الحسابات المضافة للمستخدم
-        acc_res = supabase.table("telegram_accounts") \
-            .select("id", count="exact") \
-            .eq("user_id", user_id_str) \
-            .execute()
-        accounts_count = acc_res.count if acc_res.count is not None else len(acc_res.data)
 
-        # 2. جلب بيانات الاشتراك
-        sub_res = supabase.table("users_subscriptions") \
-            .select("is_active, expire_date") \
-            .eq("user_id", user_id_str) \
-            .execute()
-        
-        is_active = False
-        expire_date = "غير محدد"
-        if sub_res.data:
-            is_active = sub_res.data[0].get("is_active", False)
-            expire_date = sub_res.data[0].get("expire_date", "غير محدد")
-
-        # 3. (اختياري) جلب إجمالي الإضافات من جدول السجلات/الإحصائيات إن وجد
-        # إذا كان لديك جدول للسجلات اسمه add_logs
-        logs_res = supabase.table("add_logs") \
-            .select("id", count="exact") \
-            .eq("user_id", user_id_str) \
-            .execute()
-        total_adds = logs_res.count if logs_res.count is not None else 0
-
-        return {
-            "status": "success",
-            "stats": {
-                "accounts_count": accounts_count,
-                "is_subscribed": is_active,
-                "expire_date": expire_date,
-                "total_adds": total_adds
-            }
-        }
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"خطأ في جلب الإحصائيات: {str(e)}")           
-        
+# ==========================================
+# 🟢 القسم 5: أمر إطلاق عملية الإضافة (Trigger Endpoint)
+# ==========================================
 @app.post("/api/start-adding")
 async def start_adding(req: AddMembersRequest):
     if not check_user_subscription(req.user_id):
@@ -930,39 +320,16 @@ async def start_adding(req: AddMembersRequest):
     if not accounts.data:
         raise HTTPException(status_code=400, detail="لا توجد حسابات مربوطة في أسطولك.")
 
-    # تشغيل المحرك الحقيقي فوراً بالخلفية
     asyncio.create_task(run_heavy_duty_engine(accounts.data, req.source_group, req.target_group))
     return {"status": "success", "message": f"⚡ تم البدء بالفعل عبر ({len(accounts.data)}) حساب! الأعضاء يضافون الآن لجروبك."}
 
-class DeleteAccountRequest(BaseModel):
-    user_id: str
-    phone: str
-
-@app.post("/api/delete-account")
-async def delete_account(req: DeleteAccountRequest):
-    try:
-        supabase.table("telegram_accounts") \
-            .delete() \
-            .eq("user_id", req.user_id) \
-            .eq("phone", req.phone) \
-            .execute()
-        return {"status": "success", "message": f"تم حذف الحساب {req.phone} بنجاح!"}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-        
 
 # ==========================================
-# 6. المحرك الخارق المصحح (تجاوز الحظر والقيود الصامتة)
+# 🟢 القسم 6: المحرك الخارق (سحب، انضمام، وإضافة متوازية)
 # ==========================================
-
-
-# دالة مساعدة معالجة وانضمام للقروبات (عامة وخاصة)
-async def safe_join_chat(client, raw_url):
+async def safe_join_chat(client: TelegramClient, raw_url: str) -> bool:
     clean_url = raw_url.strip()
-    
-    # 1. إذا كان رابط دعوة خاص (يحتوي على + أو joinchat)
     if "+" in clean_url or "joinchat" in clean_url:
-        # استخراج الـ Hash الخاص بالدعوة
         match = re.search(r'(?:\+|\/joinchat\/)([a-zA-Z0-9_-]+)', clean_url)
         if match:
             invite_hash = match.group(1)
@@ -975,7 +342,6 @@ async def safe_join_chat(client, raw_url):
                 print(f"فشل الانضمام برابط الدعوة الخاص: {e}")
                 return False
     
-    # 2. إذا كان رابط عام أو معرف عادي (@username / t.me/username)
     clean_name = clean_url.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
     try:
         entity = await client.get_entity(clean_name)
@@ -992,7 +358,63 @@ MAX_ADDS_PER_ACCOUNT = 40
 MIN_DELAY = 8
 MAX_DELAY = 15
 
-async def process_account_queue(acc_data, user_queue, source_raw, target_raw, api_id, api_hash):
+
+async def run_scraper_task(master_client: TelegramClient, src_entity) -> list:
+    scraped_users = []
+    seen_ids = set()
+
+    try:
+        participants = await master_client.get_participants(src_entity, limit=3000)
+        for u in participants:
+            if not getattr(u, 'bot', False) and not getattr(u, 'deleted', False):
+                seen_ids.add(u.id)
+                scraped_users.append((u.id, getattr(u, 'access_hash', None), getattr(u, 'username', None)))
+        
+        if scraped_users:
+            print(f"✅ [سحب عادي] تم جلب {len(scraped_users)} عضو من القائمة المباشرة.")
+    except Exception as e:
+        print(f"⚠️ القائمة المباشرة غير متاحة أو الأعضاء مخفيون: {e}")
+
+    print("🕵️‍♂️ [فحص متقدم] جاري مسح آخر 5000 رسالة لاستخراج كُتّاب الشات والمتفاعلين بالإيموجي...")
+    msg_count = 0
+    active_from_chat = 0
+
+    try:
+        async for message in master_client.iter_messages(src_entity, limit=5000):
+            msg_count += 1
+            
+            if message.sender_id and message.sender_id not in seen_ids:
+                try:
+                    user = await master_client.get_entity(message.sender_id)
+                    if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
+                        seen_ids.add(user.id)
+                        scraped_users.append((user.id, getattr(user, 'access_hash', None), getattr(user, 'username', None)))
+                        active_from_chat += 1
+                except Exception:
+                    pass
+
+            if hasattr(message, 'reactions') and message.reactions and getattr(message.reactions, 'recent_reactions', None):
+                for reaction in message.reactions.recent_reactions:
+                    u_id = getattr(reaction.peer_id, 'user_id', None)
+                    if u_id and u_id not in seen_ids:
+                        try:
+                            user = await master_client.get_entity(u_id)
+                            if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
+                                seen_ids.add(user.id)
+                                scraped_users.append((user.id, getattr(user, 'access_hash', None), getattr(user, 'username', None)))
+                                active_from_chat += 1
+                        except Exception:
+                            pass
+
+        print(f"🔥 [النتيجة الفائقة] تم فحص {msg_count} رسالة واستخراج {active_from_chat} عضو متفاعل جديد!")
+    except Exception as e:
+        print(f"❌ حدث خطأ أثناء فحص الرسائل والتفاعلات: {e}")
+
+    print(f"🎯 المجموع الكلي للجاهزين للإضافة: {len(scraped_users)} عضو نشط.")
+    return scraped_users
+
+
+async def process_account_queue(acc_data: dict, user_queue: list, source_raw: str, target_raw: str, api_id: int, api_hash: str):
     phone = acc_data.get("phone", "Unknown")
     session_str = acc_data.get("session_string")
     
@@ -1002,7 +424,6 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
     try:
         await client.connect()
         
-        # 1. التحقق من توثيق الجلسة
         if not await client.is_user_authorized():
             err_msg = f"❌ [حذف تلقائي] الحساب {phone} غير مفعل! جاري مسحه..."
             send_telegram_notification(err_msg)
@@ -1012,7 +433,6 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
                 pass
             return
 
-        # 2. إجبار الحساب الفرعي على الانضمام للقروب المصدر أولاً
         joined_src = await safe_join_chat(client, source_raw)
         if joined_src:
             print(f"✅ [الحساب {phone}] انضم للقروب المصدر بنجاح!")
@@ -1020,29 +440,24 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
         else:
             send_telegram_notification(f"⚠️ [الحساب {phone}] تعذر انضمامه للمصدر، جاري المحاولة بشكل مباشر...")
 
-        # 3. إجبار الحساب الفرعي على الانضمام للقروب الهدف
         joined_trg = await safe_join_chat(client, target_raw)
         if not joined_trg:
             send_telegram_notification(f"🛑 [الحساب {phone}] فشل بالانضمام للجروب الهدف! تم إيقاف هذا الحساب.")
             return
 
-        # الحصول على كيان الجروب الهدف للبدء بالإصافة
         target_clean = target_raw.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
         target_entity = await client.get_entity(target_clean)
 
-        # 4. التنفيذ الفعلي للإضافة
         while user_queue and adds_count < MAX_ADDS_PER_ACCOUNT:
             user_info = user_queue.pop(0)
             u_id, u_hash, u_name = user_info
             
             try:
-                # جعل الحساب يجلب الكيان بنفسه بعد انضمامه للمصدر
                 if u_name:
                     user_to_add = await client.get_input_entity(u_name)
                 else:
                     user_to_add = await client.get_input_entity(u_id)
 
-                # الإضافة
                 await client(InviteToChannelRequest(target_entity, [user_to_add]))
                 adds_count += 1
                 
@@ -1060,23 +475,18 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
                 send_telegram_notification(f"🛑 [إعدادات الجروب] الجروب الهدف يمنع إضافة الأعضاء إلا للمشرفين!")
                 break
             except FloodWaitError as e:
-                # الحصول على عدد الثواني التي يطلب تليجرام انتظارها (أو 60 ثانية افتراضياً)
                 wait_time = getattr(e, 'seconds', 60)
                 print(f"⏳ [تليجرام يطلب الانتظار] الحساب {phone} سينتظر {wait_time} ثانية ثم يكمل...")
                 send_telegram_notification(f"⏳ الحساب {phone} اصطدم بمهلة انتظر {wait_time} ثانية وسيكمل الإضافة...")
-    
-                # إعادة العضو للقائمة حتى لا يضيع
+                
                 user_queue.insert(0, user_info)
-    
-                # جعل الحساب ينام طوال فترة المهلة ثم يواصل الحلقة بدلاً من الخروج
                 await asyncio.sleep(wait_time + 5)
                 continue
 
             except PeerFloodError:
-                 # إذا واجه حظر سبام شديد، ينظر 3 دقائق ويحاول مرة أخرى دون الخروج
                 print(f"🛑 [PeerFlood] الحساب {phone} سينتظر 180 ثانية لتجاوز التقييد...")
                 send_telegram_notification(f"⚠️ [تقييد مؤقت] الحساب {phone} سينتظر 3 دقائق قبل الإضافة التالية...")
-    
+                
                 user_queue.insert(0, user_info)
                 await asyncio.sleep(180)
                 continue
@@ -1087,111 +497,9 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
         print(f"💥 خطأ غير متوقع بالجلسة {phone}: {e}")
     finally:
         await client.disconnect()
-        
-async def scrape_all_types(master_client, src_entity):
-    """
-    دالة السحب الشاملة والخارقة (حد 5000 رسالة):
-    - تسحب السحب المباشر إن كان القروب مفتوحاً.
-    - تفحص آخر 5000 رسالة للقروبات المخفية أو لزيادة الدقة.
-    - تستخرج كُتّاب الرسائل + المتفاعلين بالإيموجي (Reactions).
-    """
-    scraped_users = []
-    seen_ids = set()
 
-    # -------------------------------------------------------------
-    # 1. المحاولة الأولى: السحب المباشر من قائمة الأعضاء (إن أمكن)
-    # -------------------------------------------------------------
-    # 🟢 1. تعريف القوائم والمتغيرات بقيم فارغة أولاً لتجنب NameError
-# 🟢 يجب أن يكون المقطع كاملاً داخل دالة async def
-async def run_scraper_task(master_client, src_entity):
-    # 🟢 1. تعريف المتغيرات أولاً لمنع خطأ NameError تماماً
-    participants = []
-    scraped_users = []
-    seen_ids = set()
 
-    # ==========================================
-    # 1️⃣ الطريقة الأولى: السحب المباشر (العادي)
-    # ==========================================
-    try:
-        participants = await master_client.get_participants(src_entity, limit=3000)
-        for u in participants:
-            if not u.bot and not u.deleted:
-                seen_ids.add(u.id)
-                scraped_users.append((u.id, u.access_hash, u.username))
-        
-        if scraped_users:
-            print(f"✅ [سحب عادي] تم جلب {len(scraped_users)} عضو من القائمة المباشرة.")
-    except Exception as e:
-        print(f"⚠️ القائمة المباشرة غير متاحة أو الأعضاء مخفيون: {e}")
-
-    # ==========================================
-    # 2️⃣ الطريقة الثانية: سحب المتفاعلين من الرسائل (السحب الآخر)
-    # ==========================================
-    print("🔍 جاري تشغيل السحب المتقدم (من تاريخ الرسائل والمتفاعلين)...")
-    try:
-        async for msg in master_client.iter_messages(src_entity, limit=1000):
-            if msg.sender_id and msg.sender_id not in seen_ids:
-                try:
-                    user = await master_client.get_entity(msg.sender_id)
-                    if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
-                        seen_ids.add(user.id)
-                        scraped_users.append((user.id, getattr(user, 'access_hash', None), getattr(user, 'username', None)))
-                except Exception:
-                    continue
-                    
-        print(f"🔥 [سحب متقدم] الإجمالي النهائي بعد دمج الطريقتين: {len(scraped_users)} عضو نشط!")
-    except Exception as e:
-        print(f"💥 خطأ أثناء سحب الرسائل: {e}")
-
-    return scraped_users
-# 🟢 3. الآن السكربت يستطيع إكمال عمله بأمان دون أن ينهار
-    # -------------------------------------------------------------
-    # 2. المحاولة الثانية: العمق الفائق (فحص 5000 رسالة + إيموجي)
-    # -------------------------------------------------------------
-    # إذا كان الجروب مخفياً أو نريد جلب أكبر قدر من النشطين والمتفاعلين
-    print("🕵️‍♂️ [فحص متقدم] جاري مسح آخر 5000 رسالة لاستخراج كُتّاب الشات والمتفاعلين بالإيموجي...")
-    
-    msg_count = 0
-    active_from_chat = 0
-
-    try:
-        # قراءة آخر 5000 رسالة
-        async for message in master_client.iter_messages(src_entity, limit=5000):
-            msg_count += 1
-            
-            # أ) سحب كاتب الرسالة
-            if message.sender_id and message.sender_id not in seen_ids:
-                try:
-                    user = await master_client.get_entity(message.sender_id)
-                    if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
-                        seen_ids.add(user.id)
-                        scraped_users.append((user.id, user.access_hash, user.username))
-                        active_from_chat += 1
-                except Exception:
-                    pass
-
-            # ب) سحب المتفاعلين بالإيموجي (Reactions) على الرسالة
-            if message.reactions and message.reactions.recent_reactions:
-                for reaction in message.reactions.recent_reactions:
-                    user_id = getattr(reaction.peer_id, 'user_id', None)
-                    if user_id and user_id not in seen_ids:
-                        try:
-                            user = await master_client.get_entity(user_id)
-                            if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
-                                seen_ids.add(user.id)
-                                scraped_users.append((user.id, user.access_hash, user.username))
-                                active_from_chat += 1
-                        except Exception:
-                            pass
-
-        print(f"🔥 [النتيجة الفائقة] تم فحص {msg_count} رسالة واستخراج {active_from_chat} عضو متفاعل جديد (نصوص + إيموجي)!")
-    except Exception as e:
-        print(f"❌ حدث خطأ أثناء فحص الرسائل والتفاعلات: {e}")
-
-    print(f"🎯 المجموع الكلي للجاهزين للإضافة: {len(scraped_users)} عضو نشط.")
-    return scraped_users
-
-async def run_heavy_duty_engine(accounts_data, source_group, target_group):
+async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_group: str):
     if not accounts_data:
         send_telegram_notification("❌ لا توجد حسابات مضافة للتشغيل!")
         return
@@ -1205,14 +513,12 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
             send_telegram_notification("❌ الحساب الرئيسي لسحب الأعضاء غير مفعل!")
             return
 
-        # 1. انضمام الحساب الرئيسي وسحب الأعضاء
-        send_telegram_notification("🔍 جاري انضمام الحساب الرئيسي وسحب الاعضاء من المصدر...")
+        send_telegram_notification("🔍 جاري انضمام الحساب الرئيسي وسحب الأعضاء من المصدر...")
         await safe_join_chat(master_client, source_group)
         
         src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
         src_entity = await master_client.get_entity(src_clean)
         
-        # 🟢 استخدام دالة السحب المدمجة مباشرة لجمع قائمة الأعضاء
         scraped_users = await run_scraper_task(master_client, src_entity)
 
     except Exception as e:
@@ -1230,11 +536,9 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group):
     user_queue = list(scraped_users)
     tasks = []
     
-    # تمرير رابط المصدر ورابط الهدف الأصلي كما هما دون تغيير لكل حساب
     for acc in accounts_data:
         if user_queue:
             tasks.append(process_account_queue(acc, user_queue, source_group, target_group, API_ID, API_HASH))
 
-    # تنفيذ متوازي لجميع حسابات الأسطول
     await asyncio.gather(*tasks)
     send_telegram_notification("🎉 اكتملت العملية بالكامل!")
