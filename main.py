@@ -590,3 +590,61 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
 
     await asyncio.gather(*tasks)
     await send_telegram_notification("🎉 اكتملت العملية بالكامل!")
+
+# ==========================================
+# 📊 API الإحصائيات التفصيلية (سجل الإضافات)
+# ==========================================
+@app.get("/api/detailed-stats")
+async def get_detailed_stats(user_id: str, campaign_id: Optional[int] = None):
+    try:
+        if not campaign_id:
+            camps = supabase.table("adding_campaigns") \
+                .select("*") \
+                .eq("user_id", user_id) \
+                .order("created_at", desc=True) \
+                .limit(1) \
+                .execute()
+            if not camps.data:
+                return {"status": "success", "has_data": False, "message": "لا توجد عمليات سابقة."}
+            campaign = camps.data[0]
+            campaign_id = campaign["id"]
+        else:
+            camp_res = supabase.table("adding_campaigns").select("*").eq("id", campaign_id).eq("user_id", user_id).execute()
+            if not camp_res.data:
+                raise HTTPException(status_code=404, detail="العملية غير موجودة")
+            campaign = camp_res.data[0]
+
+        logs_res = supabase.table("adding_logs") \
+            .select("account_phone, status") \
+            .eq("campaign_id", campaign_id) \
+            .execute()
+
+        per_account_stats = {}
+        for log in logs_res.data:
+            phone = log["account_phone"]
+            status = log["status"]
+            if phone not in per_account_stats:
+                per_account_stats[phone] = {"success": 0, "failed": 0, "total": 0}
+            
+            per_account_stats[phone]["total"] += 1
+            if status == "success":
+                per_account_stats[phone]["success"] += 1
+            else:
+                per_account_stats[phone]["failed"] += 1
+
+        recent_logs = supabase.table("adding_logs") \
+            .select("account_phone, target_user, status, added_at") \
+            .eq("campaign_id", campaign_id) \
+            .order("added_at", desc=True) \
+            .limit(50) \
+            .execute()
+
+        return {
+            "status": "success",
+            "has_data": True,
+            "campaign": campaign,
+            "per_account_stats": per_account_stats,
+            "recent_activity_logs": recent_logs.data
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
