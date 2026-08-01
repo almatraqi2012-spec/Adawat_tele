@@ -206,6 +206,47 @@ async def oxapay_webhook(request: Request):
 # ==========================================
 # 🟢 القسم 4: إدارة وتوثيق أرقام تليجرام (Telegram Accounts APIs)
 # ==========================================
+# ==========================================
+# 📊 API الإحصائيات للوحة التحكم (User Stats)
+# ==========================================
+@app.get("/api/user-stats")
+async def get_user_stats(user_id: str):
+    try:
+        # 1. إحصائيات الحسابات المربوطة
+        accounts_res = supabase.table("telegram_accounts") \
+            .select("id", count="exact") \
+            .eq("user_id", user_id) \
+            .execute()
+        
+        total_accounts = accounts_res.count if accounts_res.count is not None else len(accounts_res.data)
+
+        # 2. جلب حالة الاشتراك وتاريخ الانتهاء
+        sub_res = supabase.table("users_subscriptions") \
+            .select("is_active, subscription_end") \
+            .eq("user_id", user_id) \
+            .execute()
+
+        is_active = False
+        ends_at = "غير محدد"
+
+        if sub_res.data and len(sub_res.data) > 0:
+            is_active = sub_res.data[0].get("is_active", False)
+            raw_end = sub_res.data[0].get("subscription_end")
+            if raw_end:
+                ends_at = str(raw_end)[:10]
+
+        return {
+            "status": "success",
+            "stats": {
+                "total_accounts": total_accounts,
+                "is_active": is_active,
+                "subscription_status": "نشط 🟢" if is_active else "غير مفعل 🔴",
+                "subscription_end": ends_at
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"فشل جلب الإحصائيات: {str(e)}")
+
 @app.get("/api/account-count")
 async def get_account_count(user_id: str):
     response = supabase.table("telegram_accounts").select("id", count="exact").eq("user_id", user_id).execute()
