@@ -402,8 +402,8 @@ async def safe_join_chat(client: TelegramClient, raw_url: str) -> bool:
         return False
 
 
-MAX_ADDS_PER_ACCOUNT = 40
-MIN_DELAY = 8
+MAX_ADDS_PER_ACCOUNT = 50
+MIN_DELAY = 5
 MAX_DELAY = 15
 
 
