@@ -3,148 +3,277 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>منصة سهم - المحرك السحابي</title>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Dragon Engine Pro - المحرك الخارق</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; padding: 20px; display: flex; justify-content: center; }
+        .card { background: #111827; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.6); border: 1px solid #1f2937; }
+        h2 { color: #38bdf8; text-align: center; margin-bottom: 15px; font-size: 22px; font-weight: 800; }
+        
+        .sub-box { background: #1e1b4b; border: 1px solid #6366f1; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 20px; }
+        .sub-status { font-weight: bold; font-size: 16px; margin-bottom: 10px; }
+        .active { color: #34d399; }
+        .inactive { color: #f87171; }
+        
+        .counter-box { background: #0f172a; border: 1px solid #38bdf8; border-radius: 10px; padding: 12px; text-align: center; margin-bottom: 20px; font-size: 14px; color: #94a3b8; }
+        .counter-box span { font-size: 22px; font-weight: bold; color: #38bdf8; }
+
+        label { display: block; margin-top: 12px; font-size: 13px; color: #94a3b8; }
+        input { width: 100%; padding: 12px; margin-top: 6px; border-radius: 8px; border: 1px solid #374151; background: #030712; color: white; box-sizing: border-box; font-size: 15px; }
+        button { width: 100%; padding: 12px; margin-top: 10px; border: none; border-radius: 8px; background: #0284c7; color: white; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { opacity: 0.9; transform: translateY(-1px); }
+        .btn-green { background: #059669; }
+        .btn-orange { background: #ea580c; }
+        .btn-purple { background: #7c3aed; }
+        
+        .status { margin-top: 15px; padding: 12px; border-radius: 8px; font-size: 14px; display: none; line-height: 1.5; }
+        .success { background: #064e3b; color: #34d399; border: 1px solid #059669; }
+        .error { background: #4c0519; color: #fecdd3; border: 1px solid #9f1239; }
+        hr { border: 0; height: 1px; background: #1f2937; margin: 20px 0; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(4px); }
+        .modal-content { background: #111827; padding: 25px; border-radius: 14px; max-width: 420px; width: 90%; text-align: center; border: 1px solid #38bdf8; }
+        .crypto-addr { background: #030712; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 13px; color: #38bdf8; word-break: break-all; margin: 10px 0; border: 1px dashed #374151; }
+    </style>
 </head>
-<body class="bg-gray-900 text-white min-h-screen flex items-center justify-center p-4">
+<body>
 
-    <!-- شاشة الدخول -->
-    <div id="authSection" class="bg-gray-800 p-8 rounded-2xl w-full max-w-md border border-gray-700">
-        <h1 class="text-2xl font-bold text-center mb-2 text-indigo-400">🚀 رادار سهم</h1>
-        <form id="authForm" class="space-y-4">
-            <input type="email" id="email" placeholder="البريد الإلكتروني" required class="w-full p-3 bg-gray-700 rounded-lg border border-gray-600">
-            <input type="password" id="password" placeholder="كلمة المرور" required class="w-full p-3 bg-gray-700 rounded-lg border border-gray-600">
-            <button type="submit" id="authBtn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 font-bold rounded-lg">تسجيل الدخول</button>
-        </form>
-    </div>
-
-    <!-- شاشة الاشتراك المطلوب (80$) -->
-    <div id="subSection" class="hidden bg-gray-800 p-8 rounded-2xl w-full max-w-md border border-amber-500/50 text-center">
-        <div class="text-4xl mb-3">💳</div>
-        <h2 class="text-xl font-bold text-amber-400 mb-2">الاشتراك غير مفعّل</h2>
-        <p class="text-xs text-gray-300 mb-6">لاستخدام المحرك الخارق وربط أرقامك، يرجى تفعيل الاشتراك الشهري (80$ / شهرياً).</p>
-        <button onclick="alert('تواصل مع إدارة البوت لتفعيل حسابك بعد الدفع')" class="w-full py-3 bg-amber-500 hover:bg-amber-600 text-black font-bold rounded-lg mb-3">تفعيل الاشتراك (80$)</button>
-        <button onclick="logout()" class="text-xs text-gray-400 underline">تسجيل الخروج</button>
-    </div>
-
-    <!-- لوحة المحرك الحقيقي -->
-    <div id="dashboardSection" class="hidden bg-gray-800 p-8 rounded-2xl w-full max-w-md border border-gray-700">
-        <div class="flex justify-between items-center mb-4">
-            <span class="text-xs text-emerald-400 font-bold">🟢 الاشتراك نشط</span>
-            <button onclick="logout()" class="text-xs bg-red-600 px-2.5 py-1 rounded">خروج</button>
-        </div>
-
-        <!-- قسم ربط رقم جديد مثل البوت -->
-        <div class="bg-gray-900 p-4 rounded-xl mb-6 border border-gray-700">
-            <h3 class="text-sm font-bold text-indigo-400 mb-2">📱 ربط رقم تلغرام جديد:</h3>
-            <div id="phoneStep1" class="space-y-2">
-                <input type="text" id="phoneNum" placeholder="+966500000000" class="w-full p-2.5 bg-gray-800 text-sm rounded border border-gray-600">
-                <button onclick="sendPhoneCode()" class="w-full py-2 bg-emerald-600 text-xs font-bold rounded">إرسال كود التحقق</button>
-            </div>
-            <div id="phoneStep2" class="hidden space-y-2 mt-2">
-                <input type="text" id="telegramCode" placeholder="أدخل الكود الذي وصلك في التلغرام" class="w-full p-2.5 bg-gray-800 text-sm rounded border border-gray-600">
-                <input type="password" id="twoFactorPass" placeholder="كلمة المرور 2FA (إن وجدت)" class="w-full p-2.5 bg-gray-800 text-sm rounded border border-gray-600">
-                <button onclick="verifyCode()" class="w-full py-2 bg-indigo-600 text-xs font-bold rounded">تأكيد وربط الرقم</button>
-            </div>
-        </div>
-
-        <!-- قسم السحب والإضافة -->
-        <form id="radarForm" class="space-y-3">
-            <input type="text" id="src" placeholder="المجموعة المصدر @source" required class="w-full p-2.5 bg-gray-700 rounded text-sm">
-            <input type="text" id="trg" placeholder="المجموعة الهدف @target" required class="w-full p-2.5 bg-gray-700 rounded text-sm">
-            <input type="number" id="count" value="10" placeholder="عدد الأعضاء" required class="w-full p-2.5 bg-gray-700 rounded text-sm">
-            <button type="submit" id="runBtn" class="w-full py-3 bg-indigo-600 hover:bg-indigo-700 font-bold rounded-lg">بدء الإضافة السحابية ⚡</button>
-        </form>
-    </div>
-
-    <script>
-        const SUPABASE_URL = "https://juuleypxvvcfgjdikpwu.supabase.co";
-        const SUPABASE_ANON_KEY = "sb_publishable_Kh6iN4Aq6X6gLNcElNzgRg_CjlLMaZL";
-        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        let currentUser = null;
-
-        window.onload = async () => {
-            const { data: { session } } = await supabaseClient.auth.getSession();
-            if (session?.user) initUser(session.user);
-        };
-
-        document.getElementById('authForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-            if (error) alert(error.message);
-            else initUser(data.user);
-        });
-
-        async function initUser(user) {
-            currentUser = user;
-            document.getElementById('authSection').classList.add('hidden');
-
-            const fd = new FormData();
-            fd.append('user_id', user.id);
-            const res = await fetch('/api/check-subscription', { method: 'POST', body: fd });
-            const data = await res.json();
-
-            if (data.is_active) {
-                document.getElementById('dashboardSection').classList.remove('hidden');
-            } else {
-                document.getElementById('subSection').classList.remove('hidden');
-            }
-        }
-
-        async function sendPhoneCode() {
-            const phone = document.getElementById('phoneNum').value;
-            const fd = new FormData();
-            fd.append('user_id', currentUser.id);
-            fd.append('phone', phone);
+    <!-- نافذة التسجيل -->
+    <div id="registerModal" class="modal" style="display: flex;">
+        <div class="modal-content">
+            <h3 style="color: #38bdf8; margin-top:0;">⚡ دخول المنظومة الخارقة</h3>
+            <p style="font-size: 13px; color: #94a3b8;">أدخل اسمك ومعرفك للتسجيل أو استعادة أسطولك المربوط</p>
             
-            const res = await fetch('/api/send-code', { method: 'POST', body: fd });
-            const data = await res.json();
-            alert(data.message);
-            if (data.status === 'success') {
-                document.getElementById('phoneStep1').classList.add('hidden');
-                document.getElementById('phoneStep2').classList.remove('hidden');
+            <label style="text-align: right;">الاسم الكامل:</label>
+            <input type="text" id="regFullName" placeholder="أحمد علي">
+            
+            <label style="text-align: right;">اسم المستخدم أو رقم التلغرام:</label>
+            <input type="text" id="regUserContact" placeholder="@username أو +966500000000">
+            
+            <button onclick="submitRegister()" class="btn-green">دخول / استعادة الحساب</button>
+        </div>
+    </div>
+
+    <!-- نافذة الدفع اليدوي -->
+    <div id="manualPayModal" class="modal">
+        <div class="modal-content">
+            <h3 style="color: #38bdf8; margin-top:0;">💎 الدفع اليدوي عبر USDT</h3>
+            <p style="font-size: 14px; color: #e2e8f0;">حول <b>$80 USDT</b> على شبكة (TRC20):</p>
+            
+            <div class="crypto-addr" id="cryptoAddress">TLtLuhkU2kkkR1Wz1TtrBTpoNRTNviYpsA</div>
+            <button onclick="copyCrypto()" style="padding: 6px; font-size: 12px; background: #374151;">نسخ العنوان 📋</button>
+            
+            <hr>
+            <p style="font-size: 13px; color: #94a3b8;">بعد التحويل، اذكر ID حسابك للبوت لتفعيلك:</p>
+            
+            <button onclick="redirectToBot()" class="btn-green">📩 إرسال إثبات الدفع للبوت</button>
+            <button onclick="closeModal('manualPayModal')" style="background: #4b5563; margin-top: 5px;">إغلاق</button>
+        </div>
+    </div>
+
+    <!-- الواجهة الرئيسية -->
+    <div class="card">
+        <h2>🔥 Dragon Heavy Engine v2.0</h2>
+        
+        <div class="sub-box">
+            <div style="font-size: 13px; color: #94a3b8; margin-bottom: 5px;">المستخدم الحالي: <b id="displayUserName" style="color: #f8fafc;">...</b></div>
+            <div class="sub-status">حالة الاشتراك الشهري ($80): <span id="subText" class="inactive">جاري التحقق...</span></div>
+            
+            <button onclick="payOxaPay()" class="btn-orange">💳 دفع تلقائي OxaPay ($80)</button>
+            <button onclick="openModal('manualPayModal')" class="btn-purple">💎 دفع يدوي USDT (TRC20)</button>
+            <button onclick="logout()" style="background: #dc2626; margin-top: 5px; font-size: 12px; padding: 6px;">تبديل الحساب / خروج</button>
+        </div>
+
+        <div class="counter-box">
+            🚀 أسطول الحسابات النشطة: <span id="accountCount">0</span> حساب جاهز
+        </div>
+        
+        <h3>1️⃣ إضافة أرقام الأسطول</h3>
+        <label>رقم الهاتف (مع رمز الدولة):</label>
+        <input type="text" id="phone" placeholder="+966500000000">
+        <button onclick="sendCode()">أرسل كود التحقق</button>
+        
+        <div id="verifyBox" style="display:none;">
+            <label>كود التحقق الواصل للتليجرام:</label>
+            <input type="text" id="otpCode" placeholder="12345">
+            <button onclick="verifyCode()" class="btn-green">ربط الرقم بالأسطول 🛡️</button>
+        </div>
+
+        <!-- قائمة الحسابات المضافة + أزرار الحذف -->
+        <div style="margin-top: 20px; background: #0f172a; padding: 15px; border-radius: 10px; border: 1px solid #1f2937;">
+            <h3 style="margin-top:0; color: #38bdf8; font-size: 15px;">📱 قائمة أرقام الأسطول المضافة</h3>
+            <div id="accountsList" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;">
+                <p style="color: #94a3b8; font-size: 13px; text-align: center;">جاري جلب الأرقام...</p>
+            </div>
+        </div>
+        
+        <hr>
+        
+        <h3>2️⃣ إطلاق الحملة الخارقة (توازٍ كامل)</h3>
+        <label>الجروب المصدر (السحب منه):</label>
+        <input type="text" id="sourceGroup" placeholder="https://t.me/source_group">
+        
+        <label>الجروب الهدف (الإضافة إليه):</label>
+        <input type="text" id="targetGroup" placeholder="https://t.me/target_group">
+        
+        <button onclick="startAdding()" class="btn-green">⚡ إطلاق السحب والإضافة التوافقية</button>
+        
+        <div id="statusBox" class="status"></div>
+    </div>
+
+    <!-- كود الجافاسكربت الخاص بالوظائف -->
+    <script>
+        let USER_ID = localStorage.getItem("user_device_id");
+        let USER_NAME = localStorage.getItem("user_full_name");
+
+        if (USER_ID && USER_NAME) {
+            document.getElementById("registerModal").style.display = "none";
+            document.getElementById("displayUserName").innerText = USER_NAME;
+        }
+
+        let phoneHash = "";
+
+        function openModal(id) { document.getElementById(id).style.display = 'flex'; }
+        function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+        
+        function showStatus(text, isError = false) {
+            const el = document.getElementById("statusBox");
+            if (!el) return;
+            el.style.display = "block";
+            el.className = "status " + (isError ? "error" : "success");
+            el.innerText = text;
+        }
+
+        async function submitRegister() {
+            const fullNameInput = document.getElementById("regFullName");
+            const contactInput = document.getElementById("regUserContact");
+
+            const fullName = fullNameInput ? fullNameInput.value.trim() : "";
+            const contact = contactInput ? contactInput.value.trim().toLowerCase() : "";
+
+            if (!fullName || !contact) {
+                return alert("يرجى إدخال اسمك واسم المستخدم/الرقم بشكل صحيح");
+            }
+
+            try {
+                showStatus("جاري البحث عن الحساب واستعادة البيانات...");
+                
+                const res = await fetch("/api/register-user", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        full_name: fullName,
+                        username_or_phone: contact
+                    })
+                });
+
+                const data = await res.json();
+                
+                if (res.ok && data.user_id) {
+                    localStorage.setItem("user_device_id", data.user_id);
+                    localStorage.setItem("user_full_name", fullName);
+                    localStorage.setItem("user_contact", contact);
+                    
+                    USER_ID = data.user_id;
+
+                    document.getElementById("registerModal").style.display = "none";
+                    document.getElementById("displayUserName").innerText = fullName;
+                    
+                    await checkSub();
+                    await updateCount();
+                    await loadAccountsList();
+
+                    alert(data.message || "تم تسجيل الدخول بنجاح!");
+                } else {
+                    alert("خطأ: " + (data.detail || "تعذر التسجيل"));
+                }
+            } catch (err) {
+                alert("تعذر الاتصال بالسيرفر، تأكد من الاتصال بالإنترنت.");
             }
         }
 
-        async function verifyCode() {
-            const code = document.getElementById('telegramCode').value;
-            const password = document.getElementById('twoFactorPass').value;
-            const fd = new FormData();
-            fd.append('user_id', currentUser.id);
-            fd.append('code', code);
-            fd.append('password', password);
-
-            const res = await fetch('/api/verify-code', { method: 'POST', body: fd });
-            const data = await res.json();
-            alert(data.message);
-            if (data.status === 'success') location.reload();
+        function logout() {
+            localStorage.clear();
+            location.reload();
         }
 
-        document.getElementById('radarForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('runBtn');
-            btn.disabled = true;
-            btn.innerText = "جاري التنفيذ عبر أرقامك المربوطة...";
+        async function checkSub() {
+            if(!USER_ID) return;
+            try {
+                const res = await fetch(`/api/subscription-status?user_id=${USER_ID}`);
+                const data = await res.json();
+                const el = document.getElementById("subText");
+                if(data.is_active) {
+                    el.innerText = "نشط 🟢 (حتى " + data.ends_at + ")";
+                    el.className = "active";
+                } else {
+                    el.innerText = "غير مفعل 🔴";
+                    el.className = "inactive";
+                }
+            } catch(e){}
+        }
 
-            const fd = new FormData();
-            fd.append('user_id', currentUser.id);
-            fd.append('src', document.getElementById('src').value);
-            fd.append('trg', document.getElementById('trg').value);
-            fd.append('count', document.getElementById('count').value);
+        async function updateCount() {
+            if(!USER_ID) return;
+            try {
+                const res = await fetch(`/api/account-count?user_id=${USER_ID}`);
+                const data = await res.json();
+                if(res.ok) document.getElementById("accountCount").innerText = data.count;
+            } catch(e){}
+        }
 
-            const res = await fetch('/api/start-addition', { method: 'POST', body: fd });
-            const data = await res.json();
-            alert(data.message);
-            btn.disabled = false;
-            btn.innerText = "بدء الإضافة السحابية ⚡";
-        });
+        async function loadAccountsList() {
+            if (!USER_ID) return;
+            const container = document.getElementById("accountsList");
+            try {
+                const res = await fetch(`/api/get-accounts?user_id=${USER_ID}`);
+                const data = await res.json();
+                
+                if (res.ok && data.accounts && data.accounts.length > 0) {
+                    container.innerHTML = "";
+                    data.accounts.forEach(acc => {
+                        const div = document.createElement("div");
+                        div.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155;";
+                        div.innerHTML = `
+                            <span style="font-weight: bold; color: #f8fafc; font-size: 14px;">📱 ${acc.phone || acc.phone_number}</span>
+                            <button onclick="deleteAccount('${acc.phone || acc.phone_number}')" style="background: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; width: auto; margin: 0;">🗑️ حذف</button>
+                        `;
+                        container.appendChild(div);
+                    });
+                } else {
+                    container.innerHTML = '<p style="color: #94a3b8; font-size: 13px; text-align: center;">لا توجد أرقام مضافة في الأسطول حالياً</p>';
+                }
+            } catch (e) {
+                container.innerHTML = '<p style="color: #ef4444; font-size: 13px; text-align: center;">فشل تحميل قائمة الأرقام</p>';
+            }
+        }
 
-        async function logout() {
-            await supabaseClient.auth.signOut();
-            location.reload();
+        async function deleteAccount(phoneNumber) {
+            if (!confirm(`هل أنت تأكد من حذف الرقم ${phoneNumber} من الأسطول؟`)) return;
+
+            showStatus("جاري حذف الرقم من قاعدة البيانات...");
+            try {
+                const res = await fetch("/api/delete-account", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: USER_ID, phone: phoneNumber })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    showStatus(data.message || "تم حذف الرقم بنجاح!");
+                    await updateCount();
+                    await loadAccountsList();
+                } else {
+                    showStatus(data.detail || "حدث خطأ أثناء الحذف", true);
+                }
+            } catch (e) {
+                showStatus("خطأ في الاتصال بالسيرفر أثناء الحذف", true);
+            }
+        }
+
+        if (USER_ID) {
+            checkSub();
+            updateCount();
+            loadAccountsList();
         }
     </script>
 </body>
