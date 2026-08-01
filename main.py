@@ -570,17 +570,16 @@ async def process_account_queue(acc_data: dict, user_queue: list, source_raw: st
                 continue
 
             except PeerFloodError:
-                print(f"🛑 [PeerFlood] الحساب {phone} سينتظر 180 ثانية لتجاوز التقييد...")
-                await send_telegram_notification(f"⚠️ [تقييد مؤقت] الحساب {phone} سينتظر 3 دقائق قبل الإضافة التالية...")
-                
+                # 🤫 تم إزالة الطباعة والإشعارات، وسينتظر الحساب 3 دقائق بصمت ثم يكمل العمل
                 user_queue.insert(0, user_info)
                 await asyncio.sleep(180)
                 continue
             except Exception as e:
-                print(f"❌ [فشل] الحساب {phone} لم يستطع إضافة ({u_name or u_id}): {e}")
+                # يمكنك ترك طباعة الأخطاء الحرجة أو حذفها أيضاً ليبقى النظام صامتاً تماماً
+                pass
 
     except Exception as e:
-        print(f"💥 خطأ غير متوقع بالجلسة {phone}: {e}")
+        pass
     finally:
         await client.disconnect()
 
