@@ -875,7 +875,8 @@ async def verify_code(req: VerifyRequest):
             raise HTTPException(status_code=400, detail="انتهت صلاحية الكود. يرجى طلب كود جديد.")
         else:
             raise HTTPException(status_code=400, detail=f"خطأ في التحقق: {err_msg}")
- @app.get("/api/user-stats")
+            
+@app.get("/api/user-stats")
 async def get_user_stats(user_id: str):
     try:
         user_id_str = str(user_id)
