@@ -321,47 +321,47 @@
         }
 
         // 3️⃣ دالة إكمال التوثيق (Verify OTP / Password)
-        async function verifyCode() {
-            const phoneInput = document.getElementById("phoneInput");
-            const otpInput = document.getElementById("otpInput");
-            const passInput = document.getElementById("passInput");
+       async function verifyCode() {
+           const phoneInput = document.getElementById("phoneInput");
+           const otpInput = document.getElementById("otpInput");
+           const passInput = document.getElementById("passInput");
 
-            const phone = phoneInput ? phoneInput.value.trim() : "";
-            const code = otpInput ? otpInput.value.trim() : "";
-            const password = passInput ? passInput.value.trim() : "";
+           const phone = phoneInput ? phoneInput.value.trim() : "";
+           const code = otpInput ? otpInput.value.trim() : "";
+           const password = passInput ? passInput.value.trim() : "";
 
-            if (!code) {
-                showStatus("⚠️ يرجى إدخال كود التحقق الذي وصلك.", true);
-                return;
-            }
+           if (!code) {
+               showStatus("⚠️ يرجى إدخال كود التحقق الذي وصلك.", true);
+               return;
+           }
 
-            showStatus("🔄 جاري التحقق وتسجيل الحساب...");
+           showStatus("🔄 جاري التحقق وتسجيل الحساب...");
 
-            try {
-                const res = await fetch("/api/verify-code", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        user_id: USER_ID,
-                        phone: phone,
-                        code: code,
-                        phone_code_hash: phoneHash,
-                        password: password
-                    })
-                });
-                const data = await res.json();
+           try {
+               const res = await fetch("/api/verify-code", {
+                   method: "POST",
+                   headers: { "Content-Type": "application/json" },
+                   body: JSON.stringify({
+                       user_id: USER_ID,
+                       phone_number: phone, // 👈 تم التعديل هنا ليتطابق مع PhoneRequest و VerifyRequest في السيرفر
+                       code: code,
+                       phone_code_hash: phoneHash,
+                       password: password
+                   })
+              });
+              const data = await res.json();
 
-                if (res.ok && data.status === "success") {
-                    showStatus("🎉 تم توثيق وإضافة الرقم للأسطول بنجاح!");
-                    await updateCount();
-                    await loadAccountsList();
-                } else {
-                    showStatus("❌ " + (data.detail || "فشل التوثيق، تحقق من الرمز"), true);
-                }
-            } catch (e) {
-                showStatus("💥 خطأ أثناء التوثيق بالسيرفر", true);
-            }
-        }
+              if (res.ok && data.status === "success") {
+                  showStatus("🎉 تم توثيق وإضافة الرقم للأسطول بنجاح!");
+                  await updateCount();
+                  await loadAccountsList();
+              } else {
+                  showStatus("❌ " + (data.detail || "فشل التوثيق، تحقق من الرمز"), true);
+              }
+          } catch (e) {
+              showStatus("💥 خطأ أثناء التوثيق بالسيرفر", true);
+          }
+      }
 
         // 4️⃣ دالة حذف حساب من الأسطول
         async function deleteAccount(phoneNumber) {
@@ -385,7 +385,7 @@
             } catch (e) {
                 showStatus("خطأ في الاتصال بالسيرفر أثناء الحذف", true);
             }
-        }
+         }
 
         // 5️⃣ دالة إطلاق حملة السحب والإضافة
         async function startAdding() {
