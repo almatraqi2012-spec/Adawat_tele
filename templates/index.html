@@ -109,52 +109,51 @@
         <hr>
         
         <!-- 2️⃣ إطلاق الحملة الخارقة (توازٍ كامل) -->
-    <div class="card">
+    <!-- 2️⃣ إطلاق الحملة الخارقة (توازٍ كامل) -->
+    <div class="card" style="margin-top: 20px; width: 100%; box-sizing: border-box;">
         <h3>2️⃣ إطلاق الحملة الخارقة (توازٍ كامل)</h3>
         <label>الجروب المصدر (السحب منه):</label>
-        <input type="text" id="sourceGroup" placeholder="https://t.me/source_group">
+        <input type="text" id="sourceGroup" placeholder="https://t.me/source_group" style="width: 100%; box-sizing: border-box;">
         
         <label>الجروب الهدف (الإضافة إليه):</label>
-        <input type="text" id="targetGroup" placeholder="https://t.me/target_group">
+        <input type="text" id="targetGroup" placeholder="https://t.me/target_group" style="width: 100%; box-sizing: border-box;">
         
-        <button onclick="startAdding()" class="btn-green">⚡ إطلاق السحب والإضافة التوافقية</button>
+        <button onclick="startAdding()" class="btn-green" style="width: 100%; margin-top: 10px;">⚡ إطلاق السحب والإضافة التوافقية</button>
         
         <div id="statusBox" class="status"></div>
-    </div> <!-- 👈 نهاية كارت إطلاق الحملة -->
+    </div>
 
-
-    <!-- 📊 إلصق كود الإحصائيات الجديد هنا مباشرة 👇 -->
-    <div id="stats-container" style="margin-top: 20px; display: none;">
+    <!-- 📊 3️⃣ قسم الإحصائيات وسجل الإضافات المباشر -->
+    <div id="stats-container" class="card" style="margin-top: 20px; display: none; width: 100%; box-sizing: border-box;">
         
         <!-- كارت الإجمالي -->
         <div style="background: #1a2234; padding: 15px; border-radius: 10px; margin-bottom: 15px; text-align: center;">
-            <h4 style="color: #8899a6; margin: 0;">إجمالي المضافين في العملية الحالية</h4>
-            <h1 id="total-added-count" style="color: #2ed573; font-size: 36px; margin: 10px 0;">0</h1>
-            <span id="campaign-status" style="color: #ffa500;">جاري الإضافة... ⚡</span>
+            <h4 style="color: #8899a6; margin: 0; font-size: 14px;">إجمالي المضافين في العملية الحالية</h4>
+            <h1 id="total-added-count" style="color: #2ed573; font-size: 32px; margin: 10px 0;">0</h1>
+            <span id="campaign-status" style="color: #ffa500; font-size: 13px;">جاري الإضافة... ⚡</span>
         </div>
 
         <!-- جدول إحصائيات كل حساب -->
-        <h3 style="color: #fff;">📊 إحصائيات الحسابات المشاركة:</h3>
-        <table style="width:100%; text-align: right; border-collapse: collapse; margin-bottom: 20px; background: #1a2234; border-radius: 8px; overflow: hidden;">
+        <h4 style="color: #fff; margin-bottom: 8px;">📊 إحصائيات الحسابات المشاركة:</h4>
+        <table style="width:100%; text-align: right; border-collapse: collapse; margin-bottom: 20px; background: #1a2234; border-radius: 8px; overflow: hidden; font-size: 13px;">
             <thead>
                 <tr style="background: #253346; color: #8899a6;">
-                    <th style="padding: 10px;">رقم الحساب</th>
-                    <th style="padding: 10px;">إضافة ناجحة</th>
-                    <th style="padding: 10px;">محاولات فاشلة</th>
+                    <th style="padding: 8px;">رقم الحساب</th>
+                    <th style="padding: 8px;">ناجحة</th>
+                    <th style="padding: 8px;">فاشلة</th>
                 </tr>
             </thead>
             <tbody id="accounts-stats-body">
-                <!-- ستظهر أرقام الحسابات وإحصائياتها هنا تلقائياً -->
+                <!-- ستظهر البيانات هنا -->
             </tbody>
         </table>
 
-        <!-- سجل الأحداث المباشر (فلان أضاف فلان) -->
-        <h3 style="color: #fff;">📜 سجل الحركات المباشر:</h3>
-        <div id="activity-logs" style="background: #0f172a; padding: 15px; border-radius: 8px; max-height: 250px; overflow-y: auto; font-family: monospace; font-size: 13px;">
+        <!-- سجل الأحداث المباشر (من أضاف من) -->
+        <h4 style="color: #fff; margin-bottom: 8px;">📜 سجل الحركات المباشر:</h4>
+        <div id="activity-logs" style="background: #0f172a; padding: 10px; border-radius: 8px; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; text-align: right;">
             <!-- ستظهر الرسائل الحية هنا -->
         </div>
     </div>
-
     <!-- كود الجافاسكربت الخاص بالوظائف -->
     <script>
         let USER_ID = localStorage.getItem("user_device_id");
