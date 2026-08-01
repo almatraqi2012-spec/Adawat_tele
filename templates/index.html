@@ -251,13 +251,22 @@
         }
 
         async function updateCount() {
-            if(!USER_ID) return;
             try {
-                const res = await fetch(`/api/account-count?user_id=${USER_ID}`);
+                const res = await fetch("/api/stats"); // أو الـ Endpoint الخاص بالإحصائيات لديك
                 const data = await res.json();
-                const el = document.getElementById("accountCount");
-                if(res.ok && el) el.innerText = data.count;
-            } catch(e){}
+
+                if (res.ok) {
+                 // تأكد أن أسماء الـ IDs أدناه تماثل الموجودة في HTML
+                    if (document.getElementById("totalAccounts")) {
+                        document.getElementById("totalAccounts").innerText = data.total || 0;
+                    }
+                    if (document.getElementById("activeAccounts")) {
+                        document.getElementById("activeAccounts").innerText = data.active || 0;
+                    }
+                }
+            } catch (e) {
+                console.error("خطأ في تحديث الإحصائيات:", e);
+            }
         }
 
         async function loadAccountsList() {
@@ -499,6 +508,13 @@
         }
 
         // تشغيل التحديث التلقائي كل 3 ثوانٍ
-        setInterval(updateDetailedStats, 3000);
+        // تشغيل دالة التحديث فور فتح الصفحة
+document.addEventListener("DOMContentLoaded", () => {
+    updateCount();
+    loadAccountsList();
+
+    // 🔄 تحديث الإحصائيات تلقائياً كل 5 ثوانٍ
+    setInterval(updateCount, 5000); 
+});
     </script>
                 
