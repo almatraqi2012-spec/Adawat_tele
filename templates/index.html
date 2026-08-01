@@ -287,9 +287,9 @@
             }
         }
 
-        // 2️⃣ دالة إرسال كود التحقق (Send Code)
+        /// 2️⃣ دالة إرسال كود التحقق (Send Code)
         async function sendCode() {
-            const phoneInput = document.getElementById("phoneInput") || document.querySelector("input[type='text']");
+            const phoneInput = document.getElementById("phone");
             const phone = phoneInput ? phoneInput.value.trim() : "";
 
             if (!phone) {
@@ -303,15 +303,17 @@
                 const res = await fetch("/api/send-code", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ user_id: USER_ID, phone: phone })
+                    body: JSON.stringify({ user_id: USER_ID, phone_number: phone })
                 });
                 const data = await res.json();
 
                 if (res.ok && data.status === "success") {
                     phoneHash = data.phone_code_hash || "";
                     showStatus("✅ تم إرسال الكود! ادخله في الخانة أدناه.");
-                    const otpSec = document.getElementById("otpSection");
-                    if(otpSec) otpSec.style.display = "block";
+                    
+                    // إظهار حقل إدخال الكود (تأكد من وجود verifyBox أو otpSection حسب رغبتك)
+                    const verifyBox = document.getElementById("verifyBox");
+                    if(verifyBox) verifyBox.style.display = "block";
                 } else {
                     showStatus("❌ " + (data.detail || "تعذر إرسال الكود، تأكد من صحة الرقم"), true);
                 }
