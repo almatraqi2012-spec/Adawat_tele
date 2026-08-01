@@ -70,6 +70,7 @@ class VerifyRequest(BaseModel):
     phone_number: str
     phone_code_hash: str
     code: str
+    password: Optional[str] = None
 
 class AddMembersRequest(BaseModel):
     user_id: str
@@ -79,13 +80,7 @@ class AddMembersRequest(BaseModel):
 class DeleteAccountRequest(BaseModel):
     user_id: str
     phone: str
-class VerifyRequest(BaseModel):
-    user_id: str
-    phone_number: str
-    phone_code_hash: str
-    code: str
-    password: Optional[str] = None  # 👈 إضافة حقل كلمة السر اختياريًا
-    
+
 def check_user_subscription(user_id: str) -> bool:
     user_id_str = str(user_id)
     res = supabase.table("users_subscriptions").select("is_active").eq("user_id", user_id_str).execute()
@@ -212,13 +207,9 @@ async def oxapay_webhook(request: Request):
 # ==========================================
 # 🟢 القسم 4: إدارة وتوثيق أرقام تليجرام (Telegram Accounts APIs)
 # ==========================================
-# ==========================================
-# 📊 API الإحصائيات للوحة التحكم (User Stats)
-# ==========================================
 @app.get("/api/user-stats")
 async def get_user_stats(user_id: str):
     try:
-        # 1. إحصائيات الحسابات المربوطة
         accounts_res = supabase.table("telegram_accounts") \
             .select("id", count="exact") \
             .eq("user_id", user_id) \
@@ -226,7 +217,6 @@ async def get_user_stats(user_id: str):
         
         total_accounts = accounts_res.count if accounts_res.count is not None else len(accounts_res.data)
 
-        # 2. جلب حالة الاشتراك وتاريخ الانتهاء
         sub_res = supabase.table("users_subscriptions") \
             .select("is_active, subscription_end") \
             .eq("user_id", user_id) \
@@ -278,40 +268,32 @@ async def delete_account(req: DeleteAccountRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-async function sendCode() {
-    const phoneInput = document.getElementById("phoneInput");
-    const phone = phoneInput ? phoneInput.value.trim() : "";
+@app.post("/api/send-code")
+async def send_code(req: PhoneRequest):
+    if not check_user_subscription(req.user_id):
+        raise HTTPException(status_code=403, detail="عذراً، يجب تفعيل الاشتراك أولاً.")
 
-    if (!phone) {
-        showStatus("⚠️ يرجى إدخال رقم الهاتف مع رمز الدولة.", true);
-        return;
-    }
-
-    showStatus("⚡ جاري طلب كود التحقق من تليجرام...");
-
-    try {
-        const res = await fetch("/api/send-code", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ 
-                user_id: USER_ID, 
-                phone_number: phone //  المطابقة هنا مع PhoneRequest
-            })
-        });
-        const data = await res.json();
-
-        if (res.ok && data.status === "success") {
-            phoneHash = data.phone_code_hash || "";
-            showStatus("✅ " + data.message);
-            const otpSec = document.getElementById("otpSection");
-            if(otpSec) otpSec.style.display = "block";
-        } else {
-            showStatus("❌ " + (data.detail || "تعذر إرسال الكود"), true);
+    phone = req.phone_number.strip().replace(" ", "")
+    client = TelegramClient(StringSession(), API_ID, API_HASH)
+    await client.connect()
+    
+    try:
+        sent_code = await client.send_code_request(phone)
+        
+        pending_sessions[str(req.user_id)] = {
+            "client": client,
+            "phone": phone,
+            "phone_code_hash": sent_code.phone_code_hash
         }
-    } catch (e) {
-        showStatus("💥 خطأ بالاتصال بالسيرفر أثناء إرسال الكود", true);
-    }
-}
+        
+        return {
+            "status": "success", 
+            "phone_code_hash": sent_code.phone_code_hash, 
+            "message": "تم إرسال الكود بنجاح! افحص تطبيق تليجرام."
+        }
+    except Exception as e:
+        await client.disconnect()
+        raise HTTPException(status_code=400, detail=f"فشل إرسال الكود: {str(e)}")
 
 @app.post("/api/verify-code")
 async def verify_code(req: VerifyRequest):
@@ -337,7 +319,6 @@ async def verify_code(req: VerifyRequest):
     try:
         clean_code = req.code.strip().replace(" ", "")
         
-        # 🟢 المحاولة الأولى: تسجيل الدخول بالكود
         try:
             await client.sign_in(
                 phone=phone, 
@@ -345,19 +326,16 @@ async def verify_code(req: VerifyRequest):
                 phone_code_hash=phone_code_hash
             )
         except Exception as sign_in_err:
-            # 🔐 في حال طلب التليجرام كلمة سر التحقق بخطوتين (2FA)
             if "SessionPasswordNeededError" in str(sign_in_err):
                 if not req.password or not req.password.strip():
                     raise HTTPException(
                         status_code=400, 
                         detail="هذا الحساب محمي بالتحقق بخطوتين (2FA). يرجى أدخال كلمة السر في الخانة المخصصة."
                     )
-                # تسجيل الدخول باستخدام كلمة السر
                 await client.sign_in(password=req.password.strip())
             else:
                 raise sign_in_err
         
-        # 💾 حفظ الجلسة في قاعدة البيانات
         final_session = client.session.save()
         await client.disconnect()
 
@@ -621,6 +599,7 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
 
     await asyncio.gather(*tasks)
     await send_telegram_notification("🎉 اكتملت العملية بالكامل!")
+
 
 # ==========================================
 # 📊 API الإحصائيات التفصيلية (سجل الإضافات)
