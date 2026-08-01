@@ -79,7 +79,13 @@ class AddMembersRequest(BaseModel):
 class DeleteAccountRequest(BaseModel):
     user_id: str
     phone: str
-
+class VerifyRequest(BaseModel):
+    user_id: str
+    phone_number: str
+    phone_code_hash: str
+    code: str
+    password: Optional[str] = None  # 👈 إضافة حقل كلمة السر اختياريًا
+    
 def check_user_subscription(user_id: str) -> bool:
     user_id_str = str(user_id)
     res = supabase.table("users_subscriptions").select("is_active").eq("user_id", user_id_str).execute()
@@ -272,32 +278,40 @@ async def delete_account(req: DeleteAccountRequest):
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.post("/api/send-code")
-async def send_code(req: PhoneRequest):
-    if not check_user_subscription(req.user_id):
-        raise HTTPException(status_code=403, detail="عذراً، يجب تفعيل الاشتراك أولاً.")
+async function sendCode() {
+    const phoneInput = document.getElementById("phoneInput");
+    const phone = phoneInput ? phoneInput.value.trim() : "";
 
-    phone = req.phone_number.strip().replace(" ", "")
-    client = TelegramClient(StringSession(), API_ID, API_HASH)
-    await client.connect()
-    
-    try:
-        sent_code = await client.send_code_request(phone)
-        
-        pending_sessions[str(req.user_id)] = {
-            "client": client,
-            "phone": phone,
-            "phone_code_hash": sent_code.phone_code_hash
+    if (!phone) {
+        showStatus("⚠️ يرجى إدخال رقم الهاتف مع رمز الدولة.", true);
+        return;
+    }
+
+    showStatus("⚡ جاري طلب كود التحقق من تليجرام...");
+
+    try {
+        const res = await fetch("/api/send-code", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+                user_id: USER_ID, 
+                phone_number: phone // 👈 المطابقة هنا مع PhoneRequest
+            })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.status === "success") {
+            phoneHash = data.phone_code_hash || "";
+            showStatus("✅ " + data.message);
+            const otpSec = document.getElementById("otpSection");
+            if(otpSec) otpSec.style.display = "block";
+        } else {
+            showStatus("❌ " + (data.detail || "تعذر إرسال الكود"), true);
         }
-        
-        return {
-            "status": "success", 
-            "phone_code_hash": sent_code.phone_code_hash, 
-            "message": "تم إرسال الكود بنجاح! افحص تطبيق تليجرام."
-        }
-    except Exception as e:
-        await client.disconnect()
-        raise HTTPException(status_code=400, detail=f"فشل إرسال الكود: {str(e)}")
+    } catch (e) {
+        showStatus("💥 خطأ بالاتصال بالسيرفر أثناء إرسال الكود", true);
+    }
+}
 
 @app.post("/api/verify-code")
 async def verify_code(req: VerifyRequest):
@@ -323,12 +337,27 @@ async def verify_code(req: VerifyRequest):
     try:
         clean_code = req.code.strip().replace(" ", "")
         
-        await client.sign_in(
-            phone=phone, 
-            code=clean_code, 
-            phone_code_hash=phone_code_hash
-        )
+        # 🟢 المحاولة الأولى: تسجيل الدخول بالكود
+        try:
+            await client.sign_in(
+                phone=phone, 
+                code=clean_code, 
+                phone_code_hash=phone_code_hash
+            )
+        except Exception as sign_in_err:
+            # 🔐 في حال طلب التليجرام كلمة سر التحقق بخطوتين (2FA)
+            if "SessionPasswordNeededError" in str(sign_in_err):
+                if not req.password or not req.password.strip():
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="هذا الحساب محمي بالتحقق بخطوتين (2FA). يرجى أدخال كلمة السر في الخانة المخصصة."
+                    )
+                # تسجيل الدخول باستخدام كلمة السر
+                await client.sign_in(password=req.password.strip())
+            else:
+                raise sign_in_err
         
+        # 💾 حفظ الجلسة في قاعدة البيانات
         final_session = client.session.save()
         await client.disconnect()
 
@@ -338,13 +367,15 @@ async def verify_code(req: VerifyRequest):
             "session_string": final_session
         }).execute()
 
-        del pending_sessions[user_key]
+        if user_key in pending_sessions:
+            del pending_sessions[user_key]
+
         return {"status": "success", "message": "🟢 تم ربط الرقم بنجاح وإضافته للأسطول!"}
         
     except Exception as e:
         err_msg = str(e)
-        if "SessionPasswordNeededError" in err_msg:
-            raise HTTPException(status_code=400, detail="الحساب محمي بالتحقق بخطوتين (2FA). يرجى إيقاف كلمة السر مؤقتاً ثم إعادة التجربة.")
+        if "PasswordHashInvalidError" in err_msg:
+            raise HTTPException(status_code=400, detail="كلمة سر التحقق بخطوتين (2FA) غير صحيحة.")
         elif "PhoneCodeInvalidError" in err_msg:
             raise HTTPException(status_code=400, detail="الكود الذي أدخلته غير صحيح. تأكد من الأرقام وأعد المحاولة.")
         elif "PhoneCodeExpiredError" in err_msg:
