@@ -6,7 +6,7 @@ import re
 import uuid
 import random
 import asyncio
-import requests
+import httpx
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
@@ -84,11 +84,13 @@ def check_user_subscription(user_id: str) -> bool:
         return True
     return False
 
-def send_telegram_notification(text: str):
+async def send_telegram_notification(text: str):
+    """إرسال إشعار تليجرام بشكل غير متزامن لتجنب تعطيل السيرفر"""
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        url = f"https://api.telegram.org/bot{ADMIN_TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {"chat_id": ADMIN_CHAT_ID, "text": text, "parse_mode": "HTML"}
-        requests.post(url, json=payload, timeout=5)
+        async with httpx.AsyncClient() as client:
+            await client.post(url, json=payload, timeout=5.0)
     except Exception as e:
         print(f"فشل إرسال الإشعار: {e}")
 
@@ -134,7 +136,7 @@ async def register_user(req: RegisterUserRequest):
             "subscription_end": None
         }).execute()
 
-        send_telegram_notification(
+        await send_telegram_notification(
             f"🚨 <b>مشترك جديد يسجل في المنصة!</b>\n"
             f"👤 <b>الاسم:</b> {clean_name}\n"
             f"📞 <b>التواصل:</b> {clean_contact}\n"
@@ -171,9 +173,11 @@ async def create_oxapay_payment(req: PaymentRequest):
         "description": "اشتراك شهري للمحرك الخارق"
     }
     try:
-        response = requests.post("https://api.oxapay.com/merchants/request", json=payload).json()
-        if response.get("result") == 100:
-            return {"pay_url": response.get("payLink")}
+        async with httpx.AsyncClient() as client:
+            res = await client.post("https://api.oxapay.com/merchants/request", json=payload, timeout=10.0)
+            response = res.json()
+            if response.get("result") == 100:
+                return {"pay_url": response.get("payLink")}
         raise HTTPException(status_code=400, detail="خطأ بإنشاء رابط OxaPay")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -191,7 +195,7 @@ async def oxapay_webhook(request: Request):
             "subscription_end": new_end_date.isoformat()
         }).execute()
 
-        send_telegram_notification(f"✅ <b>تأكيد دفع اشتراك تلقائي (OxaPay)!</b>\n🆔 المعرف: <code>{user_id}</code>")
+        await send_telegram_notification(f"✅ <b>تأكيد دفع اشتراك تلقائي (OxaPay)!</b>\n🆔 المعرف: <code>{user_id}</code>")
         
     return {"status": "ok"}
 
@@ -426,7 +430,7 @@ async def process_account_queue(acc_data: dict, user_queue: list, source_raw: st
         
         if not await client.is_user_authorized():
             err_msg = f"❌ [حذف تلقائي] الحساب {phone} غير مفعل! جاري مسحه..."
-            send_telegram_notification(err_msg)
+            await send_telegram_notification(err_msg)
             try:
                 supabase.table("telegram_accounts").delete().eq("phone", phone).execute()
             except Exception:
@@ -436,13 +440,13 @@ async def process_account_queue(acc_data: dict, user_queue: list, source_raw: st
         joined_src = await safe_join_chat(client, source_raw)
         if joined_src:
             print(f"✅ [الحساب {phone}] انضم للقروب المصدر بنجاح!")
-            send_telegram_notification(f"🔗 [الحساب {phone}] دخل القروب المصدر بنجاح.")
+            await send_telegram_notification(f"🔗 [الحساب {phone}] دخل القروب المصدر بنجاح.")
         else:
-            send_telegram_notification(f"⚠️ [الحساب {phone}] تعذر انضمامه للمصدر، جاري المحاولة بشكل مباشر...")
+            await send_telegram_notification(f"⚠️ [الحساب {phone}] تعذر انضمامه للمصدر، جاري المحاولة بشكل مباشر...")
 
         joined_trg = await safe_join_chat(client, target_raw)
         if not joined_trg:
-            send_telegram_notification(f"🛑 [الحساب {phone}] فشل بالانضمام للجروب الهدف! تم إيقاف هذا الحساب.")
+            await send_telegram_notification(f"🛑 [الحساب {phone}] فشل بالانضمام للجروب الهدف! تم إيقاف هذا الحساب.")
             return
 
         target_clean = target_raw.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
@@ -463,21 +467,21 @@ async def process_account_queue(acc_data: dict, user_queue: list, source_raw: st
                 
                 log_msg = f"✅ [نجاح] الحساب {phone} أضاف: ({u_name or u_id}) | إجمالي الحساب: {adds_count}"
                 print(log_msg)
-                send_telegram_notification(log_msg)
+                await send_telegram_notification(log_msg)
                 
                 await asyncio.sleep(random.randint(MIN_DELAY, MAX_DELAY))
 
             except UserPrivacyRestrictedError:
                 print(f"🔒 [خصوصية] العضو ({u_name or u_id}) يمنع الإضافة من الغرباء.")
             except UserNotMutualContactError:
-                send_telegram_notification(f"⚠️ [قيود] الحساب {phone} مقيد مؤقتاً من إضافة أرقام ليست في جهات اتصاله.")
+                await send_telegram_notification(f"⚠️ [قيود] الحساب {phone} مقيد مؤقتاً من إضافة أرقام ليست في جهات اتصاله.")
             except ChatAdminRequiredError:
-                send_telegram_notification(f"🛑 [إعدادات الجروب] الجروب الهدف يمنع إضافة الأعضاء إلا للمشرفين!")
+                await send_telegram_notification(f"🛑 [إعدادات الجروب] الجروب الهدف يمنع إضافة الأعضاء إلا للمشرفين!")
                 break
             except FloodWaitError as e:
                 wait_time = getattr(e, 'seconds', 60)
                 print(f"⏳ [تليجرام يطلب الانتظار] الحساب {phone} سينتظر {wait_time} ثانية ثم يكمل...")
-                send_telegram_notification(f"⏳ الحساب {phone} اصطدم بمهلة انتظر {wait_time} ثانية وسيكمل الإضافة...")
+                await send_telegram_notification(f"⏳ الحساب {phone} اصطدم بمهلة انتظر {wait_time} ثانية وسيكمل الإضافة...")
                 
                 user_queue.insert(0, user_info)
                 await asyncio.sleep(wait_time + 5)
@@ -485,7 +489,7 @@ async def process_account_queue(acc_data: dict, user_queue: list, source_raw: st
 
             except PeerFloodError:
                 print(f"🛑 [PeerFlood] الحساب {phone} سينتظر 180 ثانية لتجاوز التقييد...")
-                send_telegram_notification(f"⚠️ [تقييد مؤقت] الحساب {phone} سينتظر 3 دقائق قبل الإضافة التالية...")
+                await send_telegram_notification(f"⚠️ [تقييد مؤقت] الحساب {phone} سينتظر 3 دقائق قبل الإضافة التالية...")
                 
                 user_queue.insert(0, user_info)
                 await asyncio.sleep(180)
@@ -501,7 +505,7 @@ async def process_account_queue(acc_data: dict, user_queue: list, source_raw: st
 
 async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_group: str):
     if not accounts_data:
-        send_telegram_notification("❌ لا توجد حسابات مضافة للتشغيل!")
+        await send_telegram_notification("❌ لا توجد حسابات مضافة للتشغيل!")
         return
 
     master_acc = accounts_data[0]
@@ -510,10 +514,10 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
     try:
         await master_client.connect()
         if not await master_client.is_user_authorized():
-            send_telegram_notification("❌ الحساب الرئيسي لسحب الأعضاء غير مفعل!")
+            await send_telegram_notification("❌ الحساب الرئيسي لسحب الأعضاء غير مفعل!")
             return
 
-        send_telegram_notification("🔍 جاري انضمام الحساب الرئيسي وسحب الأعضاء من المصدر...")
+        await send_telegram_notification("🔍 جاري انضمام الحساب الرئيسي وسحب الأعضاء من المصدر...")
         await safe_join_chat(master_client, source_group)
         
         src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
@@ -522,16 +526,16 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
         scraped_users = await run_scraper_task(master_client, src_entity)
 
     except Exception as e:
-        send_telegram_notification(f"💥 خطأ أثناء سحب الأعضاء: {e}")
+        await send_telegram_notification(f"💥 خطأ أثناء سحب الأعضاء: {e}")
         return
     finally:
         await master_client.disconnect()
 
     if not scraped_users:
-        send_telegram_notification("❌ لم يتم العثور على أعضاء أو الجروب المصدر محمي من السحب!")
+        await send_telegram_notification("❌ لم يتم العثور على أعضاء أو الجروب المصدر محمي من السحب!")
         return
 
-    send_telegram_notification(f"🔥 تم سحب ({len(scraped_users)}) عضو بنجاح! جاري تشغيل الأسطول وإدخالهم للمصدر أولاً...")
+    await send_telegram_notification(f"🔥 تم سحب ({len(scraped_users)}) عضو بنجاح! جاري تشغيل الأسطول وإدخالهم للمصدر أولاً...")
 
     user_queue = list(scraped_users)
     tasks = []
@@ -541,4 +545,4 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
             tasks.append(process_account_queue(acc, user_queue, source_group, target_group, API_ID, API_HASH))
 
     await asyncio.gather(*tasks)
-    send_telegram_notification("🎉 اكتملت العملية بالكامل!")
+    await send_telegram_notification("🎉 اكتملت العملية بالكامل!")
