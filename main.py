@@ -229,8 +229,10 @@ async def handle_user_login(user_id: str, username: str = None):
         "message": f"✅ أهلاً بعودتك! اشتراكك فعال ومستمر حتى: {sub_end.strftime('%Y-%m-%d')}"
     }
 # ==========================================
-# 4. الواجهة التفاعلية# ==========================================
-# 🟢 مسار واجهة المستخدم (Dragon Engine Pro)
+# 4. الواجهة التفاعلية
+
+# ==========================================
+# 4. الواجهة التفاعلية
 # ==========================================
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard():
@@ -243,13 +245,16 @@ async def serve_dashboard():
         <title>Dragon Engine Pro - المحرك الخارق</title>
         <style>
             body {{ font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; padding: 20px; display: flex; justify-content: center; }}
-            .card {{ background: #111827; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.6); border: 1px solid #1f2937; }}
+            .card {{ background: #111827; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.6); border: 1px solid #1f2937; margin-bottom: 20px; }}
             h2 {{ color: #38bdf8; text-align: center; margin-bottom: 15px; font-size: 22px; font-weight: 800; }}
             
             .sub-box {{ background: #1e1b4b; border: 1px solid #6366f1; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 20px; }}
-            .sub-status {{ font-weight: bold; font-size: 15px; margin-bottom: 10px; }}
+            .sub-status {{ font-weight: bold; font-size: 16px; margin-bottom: 10px; }}
             .active {{ color: #34d399; }}
             .inactive {{ color: #f87171; }}
+            
+            .counter-box {{ background: #0f172a; border: 1px solid #38bdf8; border-radius: 10px; padding: 12px; text-align: center; margin-bottom: 20px; font-size: 14px; color: #94a3b8; }}
+            .counter-box span {{ font-size: 22px; font-weight: bold; color: #38bdf8; }}
 
             label {{ display: block; margin-top: 12px; font-size: 13px; color: #94a3b8; }}
             input {{ width: 100%; padding: 12px; margin-top: 6px; border-radius: 8px; border: 1px solid #374151; background: #030712; color: white; box-sizing: border-box; font-size: 15px; }}
@@ -270,96 +275,6 @@ async def serve_dashboard():
         </style>
     </head>
     <body>
-        <div class="card">
-            <h2>🐉 Dragon Engine Pro</h2>
-
-            <!-- 🟢 البطاقة الموحدة (تم دمج العدادات مع الاشتراك لمنع التضارب) -->
-            <div class="sub-box">
-                <div style="font-size: 13px; color: #94a3b8; margin-bottom: 5px;">
-                    🔥 Dragon Heavy Engine v2.0
-                </div>
-                <div class="sub-status">
-                    حالة الاشتراك: <span id="sub-status">جاري التحقق...</span>
-                </div>
-
-                <hr style="border: 0; height: 1px; background: #374151; margin: 12px 0;">
-
-                <div style="display: flex; justify-content: space-around; gap: 10px;">
-                    <div style="background: #0f172a; padding: 8px; border-radius: 8px; border: 1px solid #38bdf8; flex: 1;">
-                        <div style="font-size: 11px; color: #94a3b8;">📱 الحسابات</div>
-                        <span id="acc-count" style="font-size: 18px; font-weight: bold; color: #38bdf8;">0</span>
-                    </div>
-                    <div style="background: #0f172a; padding: 8px; border-radius: 8px; border: 1px solid #38bdf8; flex: 1;">
-                        <div style="font-size: 11px; color: #94a3b8;">🚀 الإضافات</div>
-                        <span id="total-adds" style="font-size: 18px; font-weight: bold; color: #38bdf8;">0</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 💳 أزرار الدفع وتبديل الحسابات -->
-            <div style="display: flex; gap: 8px; margin-bottom: 15px;">
-                <button onclick="payOxaPay()" class="btn-purple" style="font-size: 12px; padding: 8px;">💳 دفع تلقائي OxaPay ($80)</button>
-                <button onclick="openManualPay()" class="btn-orange" style="font-size: 12px; padding: 8px;">💎 دفع يدوي USDT</button>
-            </div>
-
-            <!-- 1️⃣ أسطول الحسابات -->
-            <hr>
-            <h3 style="font-size: 16px; color: #38bdf8; margin: 0 0 10px 0;">1️⃣ إضافة أرقام الأسطول</h3>
-            <label>رقم الهاتف (مع رمز الدولة):</label>
-            <input type="text" id="phone" placeholder="+966500000000">
-            <button onclick="sendCode()" class="btn-green">أرسل كود التحقق</button>
-
-            <!-- 2️⃣ إطلاق الحملة -->
-            <hr>
-            <h3 style="font-size: 16px; color: #38bdf8; margin: 0 0 10px 0;">2️⃣ إطلاق الحملة الخارقة</h3>
-            <label>الجروب المصدر (السحب منه):</label>
-            <input type="text" id="sourceGroup" placeholder="https://t.me/source_group">
-            
-            <label>الجروب الهدف (الإضافة إليه):</label>
-            <input type="text" id="targetGroup" placeholder="https://t.me/target_group">
-
-            <button onclick="startCampaign()" class="btn-purple">⚡ إطلاق السحب والإضافة التوافقية</button>
-
-            <div id="statusBox" class="status"></div>
-        </div>
-
-        <!-- 📜 الجافاسكربت لجلب البيانات تحديث الإحصائيات -->
-        <script>
-            const tg = window.Telegram?.WebApp;
-            const currentUserId = tg?.initDataUnsafe?.user?.id || "";
-
-            async function loadUserStats(userId) {{
-                if (!userId) return;
-                try {{
-                    const response = await fetch('/api/user-stats?user_id=' + userId);
-                    const data = await response.json();
-
-                    if (data.status === "success") {{
-                        const stats = data.stats;
-                        
-                        document.getElementById("acc-count").innerText = stats.accounts_count;
-                        document.getElementById("total-adds").innerText = stats.total_adds;
-                        document.getElementById("sub-status").innerText = stats.is_subscribed ? "نشط 🟢" : "منتهي 🔴";
-                    }}
-                }} catch (error) {{
-                    console.error("فشل جلب الإحصائيات:", error);
-                }}
-            }}
-
-            document.addEventListener("DOMContentLoaded", () => {{
-                if (currentUserId) {{
-                    loadUserStats(currentUserId);
-                }}
-            }});
-
-            function sendCode() {{ alert("جاري تنفيذ طلب الكود..."); }}
-            function startCampaign() {{ alert("جاري إطلاق الحملة..."); }}
-            function payOxaPay() {{ alert("جاري فتح بوابة OxaPay..."); }}
-            function openManualPay() {{ alert("عنوان الدفع: TXX...USDT-TRC20"); }}
-        </script>
-    </body>
-    </html>
-    
 
         <!-- نافذة التسجيل -->
         <div id="registerModal" class="modal" style="display: flex;">
@@ -396,6 +311,24 @@ async def serve_dashboard():
 
         <!-- الواجهة الرئيسية -->
         <div class="card">
+            <h2>🐉 Dragon Engine Pro</h2>
+
+            <!-- 🟢 1. بطاقة إحصائيات المشترك -->
+            <div class="counter-box" style="display: flex; justify-content: space-around; gap: 8px;">
+                <div>
+                    <div style="font-size: 11px;">📱 الحسابات</div>
+                    <span id="acc-count">0</span>
+                </div>
+                <div>
+                    <div style="font-size: 11px;">🚀 الإضافات</div>
+                    <span id="total-adds">0</span>
+                </div>
+                <div>
+                    <div style="font-size: 11px;">⭐ الاشتراك</div>
+                    <span id="sub-status" style="font-size: 14px;">-</span>
+                </div>
+            </div>
+
             <h2>🔥 Dragon Heavy Engine v2.0</h2>
             
             <div class="sub-box">
@@ -431,7 +364,41 @@ async def serve_dashboard():
             </div>
             
             <hr>
-            
+        </div>
+
+        <!-- 🟢 2. كود الجافاسكربت المصمم للعمل داخل f-string في بايثون -->
+        <script>
+            const tg = window.Telegram?.WebApp;
+            const currentUserId = tg?.initDataUnsafe?.user?.id || "";
+
+            async function loadUserStats(userId) {{
+                if (!userId) return;
+                try {{
+                    const response = await fetch('/api/user-stats?user_id=' + userId);
+                    const data = await response.json();
+
+                    if (data.status === "success") {{
+                        const stats = data.stats;
+                        
+                        document.getElementById("acc-count").innerText = stats.accounts_count;
+                        document.getElementById("total-adds").innerText = stats.total_adds;
+                        document.getElementById("sub-status").innerText = stats.is_subscribed ? "🟢 نشط" : "🔴 منتهي";
+                    }}
+                }} catch (error) {{
+                    console.error("فشل جلب الإحصائيات:", error);
+                }}
+            }}
+
+            document.addEventListener("DOMContentLoaded", () => {{
+                if (currentUserId) {{
+                    loadUserStats(currentUserId);
+                }}
+            }});
+        </script>
+    </body>
+    </html>
+    
+        
             <h3>2️⃣ إطلاق الحملة الخارقة (توازٍ كامل)</h3>
             <label>الجروب المصدر (السحب منه):</label>
             <input type="text" id="sourceGroup" placeholder="https://t.me/source_group">
