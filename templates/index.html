@@ -108,6 +108,8 @@
         
         <hr>
         
+        <!-- 2️⃣ إطلاق الحملة الخارقة (توازٍ كامل) -->
+    <div class="card">
         <h3>2️⃣ إطلاق الحملة الخارقة (توازٍ كامل)</h3>
         <label>الجروب المصدر (السحب منه):</label>
         <input type="text" id="sourceGroup" placeholder="https://t.me/source_group">
@@ -118,6 +120,39 @@
         <button onclick="startAdding()" class="btn-green">⚡ إطلاق السحب والإضافة التوافقية</button>
         
         <div id="statusBox" class="status"></div>
+    </div> <!-- 👈 نهاية كارت إطلاق الحملة -->
+
+
+    <!-- 📊 إلصق كود الإحصائيات الجديد هنا مباشرة 👇 -->
+    <div id="stats-container" style="margin-top: 20px; display: none;">
+        
+        <!-- كارت الإجمالي -->
+        <div style="background: #1a2234; padding: 15px; border-radius: 10px; margin-bottom: 15px; text-align: center;">
+            <h4 style="color: #8899a6; margin: 0;">إجمالي المضافين في العملية الحالية</h4>
+            <h1 id="total-added-count" style="color: #2ed573; font-size: 36px; margin: 10px 0;">0</h1>
+            <span id="campaign-status" style="color: #ffa500;">جاري الإضافة... ⚡</span>
+        </div>
+
+        <!-- جدول إحصائيات كل حساب -->
+        <h3 style="color: #fff;">📊 إحصائيات الحسابات المشاركة:</h3>
+        <table style="width:100%; text-align: right; border-collapse: collapse; margin-bottom: 20px; background: #1a2234; border-radius: 8px; overflow: hidden;">
+            <thead>
+                <tr style="background: #253346; color: #8899a6;">
+                    <th style="padding: 10px;">رقم الحساب</th>
+                    <th style="padding: 10px;">إضافة ناجحة</th>
+                    <th style="padding: 10px;">محاولات فاشلة</th>
+                </tr>
+            </thead>
+            <tbody id="accounts-stats-body">
+                <!-- ستظهر أرقام الحسابات وإحصائياتها هنا تلقائياً -->
+            </tbody>
+        </table>
+
+        <!-- سجل الأحداث المباشر (فلان أضاف فلان) -->
+        <h3 style="color: #fff;">📜 سجل الحركات المباشر:</h3>
+        <div id="activity-logs" style="background: #0f172a; padding: 15px; border-radius: 8px; max-height: 250px; overflow-y: auto; font-family: monospace; font-size: 13px;">
+            <!-- ستظهر الرسائل الحية هنا -->
+        </div>
     </div>
 
     <!-- كود الجافاسكربت الخاص بالوظائف -->
@@ -270,11 +305,70 @@
             }
         }
 
+        // 🟢 التشغيل الأولي عند فتح الصفحة
         if (USER_ID) {
             checkSub();
             updateCount();
             loadAccountsList();
+            updateDetailedStats(); // 👈 أضفناها هنا لتجلب الإحصائيات فور فتح الصفحة
         }
+
+        // 🔄 دالة لتحديث الإحصائيات والسجل تلقائياً كل 3 ثوانٍ
+        async function updateDetailedStats() {
+            // استخدام USER_ID المعرف سابقاً أو جلبها من localStorage
+            const targetUserId = typeof USER_ID !== "undefined" ? USER_ID : localStorage.getItem("user_id");
+            if (!targetUserId) return;
+
+            try {
+                const response = await fetch(`/api/detailed-stats?user_id=${targetUserId}`);
+                const data = await response.json();
+
+                if (data.status === "success" && data.has_data) {
+                    document.getElementById("stats-container").style.display = "block";
+
+                    // 1. تحديث العداد الكلي وحالة الحملة
+                    document.getElementById("total-added-count").innerText = data.campaign.total_added || 0;
+                    document.getElementById("campaign-status").innerText = 
+                        data.campaign.status === "completed" ? "مكتملة 🎉" : 
+                        data.campaign.status === "failed" ? "متوقفة 🔴" : "جارية الآن ⚡";
+
+                    // 2. تحديث جدول أداء كل حساب
+                    const tbody = document.getElementById("accounts-stats-body");
+                    tbody.innerHTML = "";
+                    if (data.per_account_stats && Object.keys(data.per_account_stats).length > 0) {
+                        for (const [phone, stats] of Object.entries(data.per_account_stats)) {
+                            tbody.innerHTML += `
+                                <tr style="border-bottom: 1px solid #253346; color: #fff;">
+                                    <td style="padding: 8px;">${phone}</td>
+                                    <td style="padding: 8px; color: #2ed573; font-weight: bold;">${stats.success}</td>
+                                    <td style="padding: 8px; color: #ff4757;">${stats.failed}</td>
+                                </tr>
+                            `;
+                        }
+                    }
+
+                    // 3. تحديث سجل الحركات (من أضاف من)
+                    const logsDiv = document.getElementById("activity-logs");
+                    logsDiv.innerHTML = "";
+                    if (data.recent_activity_logs && data.recent_activity_logs.length > 0) {
+                        data.recent_activity_logs.forEach(log => {
+                            const statusIcon = log.status === "success" ? "🟢" : "🔒";
+                            const time = new Date(log.added_at).toLocaleTimeString("ar-EG");
+                            logsDiv.innerHTML += `
+                                <div style="margin-bottom: 6px; color: ${log.status === 'success' ? '#2ed573' : '#ffa500'};">
+                                    [${time}] ${statusIcon} الحساب <b>${log.account_phone}</b> أضاف: <b>${log.target_user}</b>
+                                </div>
+                            `;
+                        });
+                    }
+                }
+            } catch (err) {
+                console.log("خطأ في جلب الإحصائيات:", err);
+            }
+        }
+
+        // تشغيل التحديث التلقائي كل 3 ثوانٍ
+        setInterval(updateDetailedStats, 3000);
     </script>
 </body>
 </html>
