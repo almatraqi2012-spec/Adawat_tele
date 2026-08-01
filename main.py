@@ -30,6 +30,8 @@ from telethon.errors import (
 )
 
 app = FastAPI(title="Dragon Engine Pro API")
+
+# تحديد المسار المطلق لمجلد القوالب لضمان العثور عليه في Render
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
@@ -101,7 +103,7 @@ async def send_telegram_notification(text: str):
 # ==========================================
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request=request, name="index.html")
 
 @app.post("/api/register-user")
 async def register_user(req: RegisterUserRequest):
