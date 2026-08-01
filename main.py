@@ -295,6 +295,35 @@ async def send_code(req: PhoneRequest):
         await client.disconnect()
         raise HTTPException(status_code=400, detail=f"فشل إرسال الكود: {str(e)}")
 
+@app.get("/api/stats")
+async def get_stats(user_id: str):
+    try:
+        # جلب عدد الحسابات المربوطة لهذا المستخدم من قاعدة البيانات
+        accounts_res = supabase.table("telegram_accounts") \
+            .select("id", count="exact") \
+            .eq("user_id", user_id) \
+            .execute()
+        
+        total_accounts = accounts_res.count if accounts_res.count is not None else len(accounts_res.data)
+
+        # جلب حالة اشتراك المستخدم
+        sub_res = supabase.table("users_subscriptions") \
+            .select("is_active") \
+            .eq("user_id", user_id) \
+            .execute()
+
+        is_active = False
+        if sub_res.data and len(sub_res.data) > 0:
+            is_active = sub_res.data[0].get("is_active", False)
+
+        return {
+            "status": "success",
+            "total": total_accounts,
+            "active": total_accounts if is_active else 0 # أو حساب الحسابات النشطة فعلياً حسب منطق النظام لديك
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+        
 @app.post("/api/verify-code")
 async def verify_code(req: VerifyRequest):
     if not check_user_subscription(req.user_id):
@@ -412,7 +441,7 @@ async def safe_join_chat(client: TelegramClient, raw_url: str) -> bool:
 
 
 MAX_ADDS_PER_ACCOUNT = 50
-MIN_DELAY = 5
+MIN_DELAY = 8
 MAX_DELAY = 15
 
 
