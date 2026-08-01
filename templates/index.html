@@ -160,8 +160,10 @@
         let USER_NAME = localStorage.getItem("user_full_name");
 
         if (USER_ID && USER_NAME) {
-            document.getElementById("registerModal").style.display = "none";
-            document.getElementById("displayUserName").innerText = USER_NAME;
+            const modal = document.getElementById("registerModal");
+            if(modal) modal.style.display = "none";
+            const nameEl = document.getElementById("displayUserName");
+            if(nameEl) nameEl.innerText = USER_NAME;
         }
 
         let phoneHash = "";
@@ -177,6 +179,7 @@
             el.innerText = text;
         }
 
+        // 1️⃣ تسجيل / تسجيل دخول المستخدم
         async function submitRegister() {
             const fullNameInput = document.getElementById("regFullName");
             const contactInput = document.getElementById("regUserContact");
@@ -236,6 +239,7 @@
                 const res = await fetch(`/api/subscription-status?user_id=${USER_ID}`);
                 const data = await res.json();
                 const el = document.getElementById("subText");
+                if(!el) return;
                 if(data.is_active) {
                     el.innerText = "نشط 🟢 (حتى " + data.ends_at + ")";
                     el.className = "active";
@@ -251,13 +255,15 @@
             try {
                 const res = await fetch(`/api/account-count?user_id=${USER_ID}`);
                 const data = await res.json();
-                if(res.ok) document.getElementById("accountCount").innerText = data.count;
+                const el = document.getElementById("accountCount");
+                if(res.ok && el) el.innerText = data.count;
             } catch(e){}
         }
 
         async function loadAccountsList() {
             if (!USER_ID) return;
             const container = document.getElementById("accountsList");
+            if (!container) return;
             try {
                 const res = await fetch(`/api/get-accounts?user_id=${USER_ID}`);
                 const data = await res.json();
@@ -266,7 +272,7 @@
                     container.innerHTML = "";
                     data.accounts.forEach(acc => {
                         const div = document.createElement("div");
-                        div.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155;";
+                        div.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; margin-bottom: 6px;";
                         div.innerHTML = `
                             <span style="font-weight: bold; color: #f8fafc; font-size: 14px;">📱 ${acc.phone || acc.phone_number}</span>
                             <button onclick="deleteAccount('${acc.phone || acc.phone_number}')" style="background: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; width: auto; margin: 0;">🗑️ حذف</button>
@@ -281,6 +287,83 @@
             }
         }
 
+        // 2️⃣ دالة إرسال كود التحقق (Send Code)
+        async function sendCode() {
+            const phoneInput = document.getElementById("phoneInput") || document.querySelector("input[type='text']");
+            const phone = phoneInput ? phoneInput.value.trim() : "";
+
+            if (!phone) {
+                showStatus("⚠️ يرجى إدخال رقم الهاتف مع رمز الدولة.", true);
+                return;
+            }
+
+            showStatus("⚡ جاري طلب كود التحقق من تليجرام...");
+
+            try {
+                const res = await fetch("/api/send-code", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: USER_ID, phone: phone })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.status === "success") {
+                    phoneHash = data.phone_code_hash || "";
+                    showStatus("✅ تم إرسال الكود! ادخله في الخانة أدناه.");
+                    const otpSec = document.getElementById("otpSection");
+                    if(otpSec) otpSec.style.display = "block";
+                } else {
+                    showStatus("❌ " + (data.detail || "تعذر إرسال الكود، تأكد من صحة الرقم"), true);
+                }
+            } catch (e) {
+                showStatus("💥 خطأ بالاتصال بالسيرفر أثناء إرسال الكود", true);
+            }
+        }
+
+        // 3️⃣ دالة إكمال التوثيق (Verify OTP / Password)
+        async function verifyCode() {
+            const phoneInput = document.getElementById("phoneInput");
+            const otpInput = document.getElementById("otpInput");
+            const passInput = document.getElementById("passInput");
+
+            const phone = phoneInput ? phoneInput.value.trim() : "";
+            const code = otpInput ? otpInput.value.trim() : "";
+            const password = passInput ? passInput.value.trim() : "";
+
+            if (!code) {
+                showStatus("⚠️ يرجى إدخال كود التحقق الذي وصلك.", true);
+                return;
+            }
+
+            showStatus("🔄 جاري التحقق وتسجيل الحساب...");
+
+            try {
+                const res = await fetch("/api/verify-code", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        user_id: USER_ID,
+                        phone: phone,
+                        code: code,
+                        phone_code_hash: phoneHash,
+                        password: password
+                    })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.status === "success") {
+                    showStatus("🎉 تم توثيق وإضافة الرقم للأسطول بنجاح!");
+                    await updateCount();
+                    await loadAccountsList();
+                } else {
+                    showStatus("❌ " + (data.detail || "فشل التوثيق، تحقق من الرمز"), true);
+                }
+            } catch (e) {
+                showStatus("💥 خطأ أثناء التوثيق بالسيرفر", true);
+            }
+        }
+
+        // 4️⃣ دالة حذف حساب من الأسطول
         async function deleteAccount(phoneNumber) {
             if (!confirm(`هل أنت تأكد من حذف الرقم ${phoneNumber} من الأسطول؟`)) return;
 
@@ -304,18 +387,49 @@
             }
         }
 
-        // 🟢 التشغيل الأولي عند فتح الصفحة
-        if (USER_ID) {
-            checkSub();
-            updateCount();
-            loadAccountsList();
-            updateDetailedStats(); // 👈 أضفناها هنا لتجلب الإحصائيات فور فتح الصفحة
+        // 5️⃣ دالة إطلاق حملة السحب والإضافة
+        async function startAdding() {
+            const srcInput = document.getElementById("sourceGroup");
+            const trgInput = document.getElementById("targetGroup");
+
+            const sourceGroup = srcInput ? srcInput.value.trim() : "";
+            const targetGroup = trgInput ? trgInput.value.trim() : "";
+
+            if (!sourceGroup || !targetGroup) {
+                showStatus("⚠️ يرجى إدخال رابط الجروب المصدر والجروب الهدف.", true);
+                return;
+            }
+
+            showStatus("⚡ جاري إطلاق أسطول الحسابات للبدء بالإصافة...");
+
+            try {
+                const res = await fetch("/api/start-adding", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        user_id: USER_ID,
+                        source_group: sourceGroup,
+                        target_group: targetGroup
+                    })
+                });
+                const data = await res.json();
+
+                if (res.ok && data.status === "success") {
+                    showStatus(data.message || "تم بدء العملية بنجاح!");
+                    const statsBox = document.getElementById("stats-container");
+                    if(statsBox) statsBox.style.display = "block";
+                    updateDetailedStats();
+                } else {
+                    showStatus("❌ " + (data.detail || "فشل إطلاق العملية"), true);
+                }
+            } catch (e) {
+                showStatus("💥 خطأ بالاتصال بالسيرفر عند إطلاق الحملة", true);
+            }
         }
 
-        // 🔄 دالة لتحديث الإحصائيات والسجل تلقائياً كل 3 ثوانٍ
+        // 6️⃣ دالة جلب وتحديث الإحصائيات وسجل الحركات
         async function updateDetailedStats() {
-            // استخدام USER_ID المعرف سابقاً أو جلبها من localStorage
-            const targetUserId = typeof USER_ID !== "undefined" ? USER_ID : localStorage.getItem("user_id");
+            const targetUserId = typeof USER_ID !== "undefined" && USER_ID ? USER_ID : localStorage.getItem("user_device_id");
             if (!targetUserId) return;
 
             try {
@@ -323,42 +437,49 @@
                 const data = await response.json();
 
                 if (data.status === "success" && data.has_data) {
-                    document.getElementById("stats-container").style.display = "block";
+                    const statsBox = document.getElementById("stats-container");
+                    if(statsBox) statsBox.style.display = "block";
 
-                    // 1. تحديث العداد الكلي وحالة الحملة
-                    document.getElementById("total-added-count").innerText = data.campaign.total_added || 0;
-                    document.getElementById("campaign-status").innerText = 
-                        data.campaign.status === "completed" ? "مكتملة 🎉" : 
-                        data.campaign.status === "failed" ? "متوقفة 🔴" : "جارية الآن ⚡";
+                    const totalEl = document.getElementById("total-added-count");
+                    if(totalEl) totalEl.innerText = data.campaign.total_added || 0;
 
-                    // 2. تحديث جدول أداء كل حساب
+                    const statusEl = document.getElementById("campaign-status");
+                    if(statusEl) {
+                        statusEl.innerText = 
+                            data.campaign.status === "completed" ? "مكتملة 🎉" : 
+                            data.campaign.status === "failed" ? "متوقفة 🔴" : "جارية الآن ⚡";
+                    }
+
                     const tbody = document.getElementById("accounts-stats-body");
-                    tbody.innerHTML = "";
-                    if (data.per_account_stats && Object.keys(data.per_account_stats).length > 0) {
-                        for (const [phone, stats] of Object.entries(data.per_account_stats)) {
-                            tbody.innerHTML += `
-                                <tr style="border-bottom: 1px solid #253346; color: #fff;">
-                                    <td style="padding: 8px;">${phone}</td>
-                                    <td style="padding: 8px; color: #2ed573; font-weight: bold;">${stats.success}</td>
-                                    <td style="padding: 8px; color: #ff4757;">${stats.failed}</td>
-                                </tr>
-                            `;
+                    if(tbody) {
+                        tbody.innerHTML = "";
+                        if (data.per_account_stats && Object.keys(data.per_account_stats).length > 0) {
+                            for (const [phone, stats] of Object.entries(data.per_account_stats)) {
+                                tbody.innerHTML += `
+                                    <tr style="border-bottom: 1px solid #253346; color: #fff;">
+                                        <td style="padding: 8px;">${phone}</td>
+                                        <td style="padding: 8px; color: #2ed573; font-weight: bold;">${stats.success}</td>
+                                        <td style="padding: 8px; color: #ff4757;">${stats.failed}</td>
+                                    </tr>
+                                `;
+                            }
                         }
                     }
 
-                    // 3. تحديث سجل الحركات (من أضاف من)
                     const logsDiv = document.getElementById("activity-logs");
-                    logsDiv.innerHTML = "";
-                    if (data.recent_activity_logs && data.recent_activity_logs.length > 0) {
-                        data.recent_activity_logs.forEach(log => {
-                            const statusIcon = log.status === "success" ? "🟢" : "🔒";
-                            const time = new Date(log.added_at).toLocaleTimeString("ar-EG");
-                            logsDiv.innerHTML += `
-                                <div style="margin-bottom: 6px; color: ${log.status === 'success' ? '#2ed573' : '#ffa500'};">
-                                    [${time}] ${statusIcon} الحساب <b>${log.account_phone}</b> أضاف: <b>${log.target_user}</b>
-                                </div>
-                            `;
-                        });
+                    if(logsDiv) {
+                        logsDiv.innerHTML = "";
+                        if (data.recent_activity_logs && data.recent_activity_logs.length > 0) {
+                            data.recent_activity_logs.forEach(log => {
+                                const statusIcon = log.status === "success" ? "🟢" : "🔒";
+                                const time = new Date(log.added_at).toLocaleTimeString("ar-EG");
+                                logsDiv.innerHTML += `
+                                    <div style="margin-bottom: 6px; color: ${log.status === 'success' ? '#2ed573' : '#ffa500'};">
+                                        [${time}] ${statusIcon} الحساب <b>${log.account_phone}</b> أضاف: <b>${log.target_user}</b>
+                                    </div>
+                                `;
+                            });
+                        }
                     }
                 }
             } catch (err) {
@@ -366,8 +487,15 @@
             }
         }
 
+        // 🟢 التشغيل الأولي عند فتح الصفحة
+        if (USER_ID) {
+            checkSub();
+            updateCount();
+            loadAccountsList();
+            updateDetailedStats();
+        }
+
         // تشغيل التحديث التلقائي كل 3 ثوانٍ
         setInterval(updateDetailedStats, 3000);
     </script>
-</body>
-</html>
+                
