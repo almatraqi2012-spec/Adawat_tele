@@ -251,21 +251,18 @@
         }
 
         async function updateCount() {
+            if (!USER_ID) return;
             try {
-                const res = await fetch("/api/stats"); // أو الـ Endpoint الخاص بالإحصائيات لديك
+                const res = await fetch(`/api/stats?user_id=${USER_ID}`);
                 const data = await res.json();
 
-                if (res.ok) {
-                 // تأكد أن أسماء الـ IDs أدناه تماثل الموجودة في HTML
-                    if (document.getElementById("totalAccounts")) {
-                        document.getElementById("totalAccounts").innerText = data.total || 0;
-                    }
-                    if (document.getElementById("activeAccounts")) {
-                        document.getElementById("activeAccounts").innerText = data.active || 0;
+                if (res.ok && data.status === "success") {
+                    if (document.getElementById("accountCount")) {
+                        document.getElementById("accountCount").innerText = data.total || 0;
                     }
                 }
             } catch (e) {
-                console.error("خطأ في تحديث الإحصائيات:", e);
+                console.error("خطأ في تحديث العداد:", e);
             }
         }
 
