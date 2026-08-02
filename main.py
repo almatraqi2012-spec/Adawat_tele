@@ -177,11 +177,9 @@ async def create_oxapay_payment(req: PaymentRequest):
         "description": "اشتراك شهري للمحرك الخارق"
     }
     try:
-        async with httpx.AsyncClient() as client:
-            res = await client.post("https://api.oxapay.com/merchants/request", json=payload, timeout=10.0)
-            response = res.json()
-            if response.get("result") == 100:
-                return {"pay_url": response.get("payLink")}
+        response = requests.post("https://api.oxapay.com/merchants/request", json=payload).json()
+        if response.get("result") == 100:
+            return {"pay_url": response.get("payLink")}
         raise HTTPException(status_code=400, detail="خطأ بإنشاء رابط OxaPay")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -199,7 +197,7 @@ async def oxapay_webhook(request: Request):
             "subscription_end": new_end_date.isoformat()
         }).execute()
 
-        await send_telegram_notification(f"✅ <b>تأكيد دفع اشتراك تلقائي (OxaPay)!</b>\n🆔 المعرف: <code>{user_id}</code>")
+        send_telegram_notification(f"✅ <b>تأكيد دفع اشتراك تلقائي (OxaPay)!</b>\n🆔 المعرف: <code>{user_id}</code>")
         
     return {"status": "ok"}
 
