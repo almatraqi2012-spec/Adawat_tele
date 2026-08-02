@@ -533,50 +533,47 @@ async def process_account_queue(acc_data: dict, user_queue: list, source_raw: st
         target_clean = target_raw.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
         target_entity = await client.get_entity(target_clean)
 
-        while user_queue and adds_count < MAX_ADDS_PER_ACCOUNT:
-            user_info = user_queue.pop(0)
-            u_id, u_hash, u_name = user_info
-            
+        # جلب قائمة الأعضاء من المصدر مع ضمان جلب عدد أكبر كاحتياطي لتغطية من لديهم خصوصية
+        participants = await client.get_participants(source_raw)
+        
+        for user in participants:
+            if adds_count >= MAX_ADDS_PER_ACCOUNT:
+                print(f"🎉 وصل الحساب {phone} إلى الحد الأقصى المطلوب ({MAX_ADDS_PER_ACCOUNT} عضو ناجح).")
+                break
+                
             try:
-                if u_name:
-                    user_to_add = await client.get_input_entity(u_name)
-                else:
-                    user_to_add = await client.get_input_entity(u_id)
+                user_to_add = await client.get_input_entity(user)
 
                 await client(InviteToChannelRequest(target_entity, [user_to_add]))
                 adds_count += 1
                 
-                log_msg = f"✅ [نجاح] الحساب {phone} أضاف: ({u_name or u_id}) | إجمالي الحساب: {adds_count}"
+                log_msg = f"✅ [نجاح] الحساب {phone} أضاف: ({user.first_name or user.id}) | إجمالي الحساب: {adds_count}"
                 print(log_msg)
                 await send_telegram_notification(log_msg)
                 
+                # فاصل زمني عشوائي للحماية من الحظر
                 await asyncio.sleep(random.randint(MIN_DELAY, MAX_DELAY))
 
             except UserPrivacyRestrictedError:
-                print(f"🔒 [خصوصية] العضو ({u_name or u_id}) يمنع الإضافة من الغرباء.")
+                # هذا العضو لديه خصوصية، نتخطاه بصمت ونبحث عن غيره فوراً لتعويضه
+                continue
             except UserNotMutualContactError:
-                await send_telegram_notification(f"⚠️ [قيود] الحساب {phone} مقيد مؤقتاً من إضافة أرقام ليست في جهات اتصاله.")
+                await send_telegram_notification(f"⚠️ [قيود] الحساب {phone} مقيد مؤقتاً.")
+                continue
             except ChatAdminRequiredError:
-                await send_telegram_notification(f"🛑 [إعدادات الجروب] الجروب الهدف يمنع إضافة الأعضاء إلا للمشرفين!")
+                await send_telegram_notification(f"🛑 [إعدادات الجروب] الجروب يمنع إضافة الأعضاء إلا للمشرفين!")
                 break
             except FloodWaitError as e:
                 wait_time = getattr(e, 'seconds', 60)
-                print(f"⏳ [تليجرام يطلب الانتظار] الحساب {phone} سينتظر {wait_time} ثانية ثم يكمل...")
-                await send_telegram_notification(f"⏳ الحساب {phone} اصطدم بمهلة انتظر {wait_time} ثانية وسيكمل الإضافة...")
-                
-                user_queue.insert(0, user_info)
+                print(f"⏳ [تليجرام يطلب الانتظار] الحساب {phone} سينتظر {wait_time} ثانية...")
+                await send_telegram_notification(f"⏳ الحساب {phone} اصطدم بمهلة انتظر {wait_time} ثانية...")
                 await asyncio.sleep(wait_time + 5)
                 continue
-
             except PeerFloodError:
-                # 🤫 تم إزالة الطباعة والإشعارات، وسينتظر الحساب 3 دقائق بصمت ثم يكمل العمل
-                user_queue.insert(0, user_info)
                 await asyncio.sleep(180)
                 continue
-            except Exception as e:
-                # يمكنك ترك طباعة الأخطاء الحرجة أو حذفها أيضاً ليبقى النظام صامتاً تماماً
-                pass
-
+            except Exception:
+                continue
     except Exception as e:
         pass
     finally:
