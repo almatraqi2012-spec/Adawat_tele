@@ -409,7 +409,7 @@
            try {
                showStatus("جاري إنشاء رابط الدفع التلقائي عبر OxaPay...");
         
-               const res = await fetch("/api/create-oxapay-invoice", {
+               const res = await fetch("/api/create-oxapay-payment", {
                    method: "POST",
                    headers: { "Content-Type": "application/json" },
                    body: JSON.stringify({ user_id: USER_ID })
@@ -417,9 +417,8 @@
         
                const data = await res.json();
 
-               if (res.ok && data.payment_url) {
-            // فتح رابط الدفع المباشر في نافذة جديدة
-                   window.open(data.payment_url, "_blank");
+               if (res.ok && data.pay_url) {  // وتأكد أيضاً من تطابق اسم المفتاح pay_url قادماً من السيرفر
+                   window.open(data.pay_url, "_blank");
                } else {
                    alert("خطأ: " + (data.detail || "تعذر إنشاء فاتورة الدفع"));
                }
