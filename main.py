@@ -619,14 +619,21 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
     await send_telegram_notification(f"🔥 تم سحب ({len(scraped_users)}) عضو بنجاح! جاري تشغيل الأسطول وإدخالهم للمصدر أولاً...")
 
     user_queue = list(scraped_users)
-    tasks = []
-    
-    for acc in accounts_data:
-        if user_queue:
-            tasks.append(process_account_queue(acc, user_queue, source_group, target_group, API_ID, API_HASH))
+    await send_telegram_notification(f"🚀 بدء أسطول الإضافة لـ {len(user_queue)} عضو بشكل مستمر ومتوازي...")
 
+    # دالة فرعية لإدارة استمرار ضخ الحسابات حتى ينتهي الطابور بالكامل
+    async def worker(acc):
+        while user_queue:
+            if not user_queue:
+                break
+            await process_account_queue(acc, user_queue, source_group, target_group, API_ID, API_HASH)
+            await asyncio.sleep(2)
+
+    # تشغيل الأسطول بالكامل بشكل متواصل على الطابور المشترك
+    tasks = [worker(acc) for acc in accounts_data]
     await asyncio.gather(*tasks)
-    await send_telegram_notification("🎉 اكتملت العملية بالكامل!")
+
+    await send_telegram_notification("🎉 اكتملت العملية بالكامل وتم إدخال جميع الأعضاء بنجاح!")
 
 
 # ==========================================
