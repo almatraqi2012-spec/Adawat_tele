@@ -278,20 +278,32 @@
                 }
             } catch(e){}
         }
-
         async function updateCount() {
             if (!USER_ID) return;
             try {
-                const res = await fetch(`/api/stats?user_id=${USER_ID}`);
+                const res = await fetch(`/api/detailed-stats?user_id=${USER_ID}`);
+                if (!res.ok) return;
                 const data = await res.json();
 
-                if (res.ok && data.status === "success") {
-                    if (document.getElementById("accountCount")) {
-                        document.getElementById("accountCount").innerText = data.total || 0;
-                    }
+                const totalAddedElem = document.getElementById("totalAdded") || document.getElementById("total-added");
+                if (totalAddedElem && data.total_added !== undefined) {
+                    totalAddedElem.innerText = data.total_added;
+            }
+
+                const statsTableBody = document.getElementById("statsTableBody") || document.getElementById("stats-table-body");
+                if (statsTableBody && data.accounts_stats) {
+                    let rowsHTML = "";
+                    data.accounts_stats.forEach(acc => {
+                        rowsHTML += `<tr>
+                            <td>${acc.phone || acc.phone_number}</td>
+                            <td style="color: #2ecc71;">${acc.success || 0}</td>
+                            <td style="color: #e74c3c;">${acc.failed || 0}</td>
+                        </tr>`;
+                    });
+                    statsTableBody.innerHTML = rowsHTML;
                 }
             } catch (e) {
-                console.error("خطأ في تحديث العداد:", e);
+                console.error("خطأ في تحديث الإحصائيات:", e);
             }
         }
 
