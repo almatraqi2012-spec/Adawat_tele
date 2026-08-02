@@ -176,13 +176,15 @@ async def create_oxapay_payment(req: PaymentRequest):
         "description": "اشتراك شهري للمحرك الخارق"
     }
     try:
-        response = requests.post("https://api.oxapay.com/merchants/request", json=payload).json()
-        if response.get("result") == 100:
-            return {"pay_url": response.get("payLink")}
+        async with httpx.AsyncClient() as client:
+            res = await client.post("https://api.oxapay.com/merchants/request", json=payload, timeout=10.0)
+            response = res.json()
+            if response.get("result") == 100:
+                return {"pay_url": response.get("payLink")}
         raise HTTPException(status_code=400, detail="خطأ بإنشاء رابط OxaPay")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
+        
 @app.post("/api/oxapay-webhook")
 async def oxapay_webhook(request: Request):
     data = await request.json()
