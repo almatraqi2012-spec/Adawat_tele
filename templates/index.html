@@ -181,30 +181,32 @@
         
         async function payOxaPay() {
             if (!USER_ID) {
-                return alert("يرجى تسجيل الدخول أو تحديد الحساب أولاً!");
+                alert("يرجى تسجيل الدخول أو تحديد الحساب أولاً!");
+                return;
             }
 
             try {
                 showStatus("جاري إنشاء رابط الدفع التلقائي عبر OxaPay...");
         
-            const res = await fetch("/api/create-oxapay-invoice", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ user_id: USER_ID })
-            });
+        // تم تصحيح الرابط هنا ليتطابق مع السيرفر تماماً
+                const res = await fetch("/api/create-oxapay-payment", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: USER_ID })
+                });
         
-            const data = await res.json();
+                const data = await res.json();
 
-            if (res.ok && data.payment_url) {
-            // فتح رابط الدفع المباشر في نافذة جديدة
-                window.open(data.payment_url, "_blank");
-            } else {
-                alert("خطأ: " + (data.detail || "تعذر إنشاء فاتورة الدفع"));
+                if (res.ok && data.pay_url) {
+                // فتح رابط الدفع المباشر في نافذة جديدة
+                    window.open(data.pay_url, "_blank");
+                } else {
+                    alert("خطأ: " + (data.detail || "تعذر إنشاء فاتورة الدفع"));
+                }
+            } catch (e) {
+                alert("فشل الاتصال بالسيرفر لإنشاء الدفع التلقائي.");
             }
-        } catch (e) {
-            alert("فشل الاتصال بالسيرفر لإنشاء الدفع التلقائي.");
         }
-       }
         
         // 1️⃣ تسجيل / تسجيل دخول المستخدم
         async function submitRegister() {
