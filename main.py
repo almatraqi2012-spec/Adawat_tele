@@ -28,7 +28,6 @@ from telethon.errors import (
     FloodWaitError,
     PeerFloodError
 )
-
 app = FastAPI(title="Dragon Engine Pro API")
 
 # تحديد المسار المطلق لمجلد القوالب لضمان العثور عليه في Render
