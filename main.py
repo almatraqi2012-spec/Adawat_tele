@@ -439,146 +439,239 @@ async def safe_join_chat(client: TelegramClient, raw_url: str) -> bool:
         return False
 
 
+# الإعدادات السرعة والتحكم
 MAX_ADDS_PER_ACCOUNT = 50
-MIN_DELAY = 8
-MAX_DELAY = 15
+MIN_DELAY = 2.0  # سرعة خاطفة ودبابة
+MAX_DELAY = 4.0  # حماية ذكية ومضادة للحظر
 
-
-async def run_scraper_task(master_client: TelegramClient, src_entity) -> list:
-    scraped_users = []
-    seen_ids = set()
-
+async def safe_join_chat(client: TelegramClient, raw_url: str) -> bool:
+    clean_url = raw_url.strip()
+    if "+" in clean_url or "joinchat" in clean_url:
+        match = re.search(r'(?:\+|\/joinchat\/)([a-zA-Z0-9_-]+)', clean_url)
+        if match:
+            invite_hash = match.group(1)
+            try:
+                await client(ImportChatInviteRequest(invite_hash))
+                return True
+            except UserAlreadyParticipantError:
+                return True
+            except Exception:
+                return False
+    
+    clean_name = clean_url.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
     try:
-        participants = await master_client.get_participants(src_entity, limit=3000)
-        for u in participants:
-            if not getattr(u, 'bot', False) and not getattr(u, 'deleted', False):
-                seen_ids.add(u.id)
-                scraped_users.append((u.id, getattr(u, 'access_hash', None), getattr(u, 'username', None)))
-        
-        if scraped_users:
-            print(f"✅ [سحب عادي] تم جلب {len(scraped_users)} عضو من القائمة المباشرة.")
+        entity = await client.get_entity(clean_name)
+        await client(JoinChannelRequest(entity))
+        return True
+    except UserAlreadyParticipantError:
+        return True
+    except Exception:
+        return False
+
+async def get_active_sessions():
+    try:
+        res = supabase.table("telegram_accounts").select("*").in_("status", ["ready", "active"]).execute()
+        return res.data
     except Exception as e:
-        print(f"⚠️ القائمة المباشرة غير متاحة أو الأعضاء مخفيون: {e}")
+        print(f"❌ خطأ أثناء جلب الحسابات: {e}")
+        return []
 
-    print("🕵️‍♂️ [فحص متقدم] جاري مسح آخر 5000 رسالة لاستخراج كُتّاب الشات والمتفاعلين بالإيموجي...")
-    msg_count = 0
-    active_from_chat = 0
-
-    try:
-        async for message in master_client.iter_messages(src_entity, limit=5000):
-            msg_count += 1
+# المحرك الأسطوري المدمج (سحب ذكي + إضافة متوازية خرافية)
+async def dragon_ultimate_engine():
+    print("🔥 [DRAGON ULTIMATE ENGINE v3.0] تم إطلاق المحرك الأقوى في الواقع.. جاهز لكسح الجميع!")
+    
+    while True:
+        try:
+            mission_res = supabase.table("adding_missions").select("*").eq("status", "running").execute()
+            missions = mission_res.data
             
-            if message.sender_id and message.sender_id not in seen_ids:
-                try:
-                    user = await master_client.get_entity(message.sender_id)
-                    if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
-                        seen_ids.add(user.id)
-                        scraped_users.append((user.id, getattr(user, 'access_hash', None), getattr(user, 'username', None)))
-                        active_from_chat += 1
-                except Exception:
-                    pass
+            if not missions:
+                await asyncio.sleep(2)
+                continue
+                
+            for mission in missions:
+                mission_id = mission['id']
+                source_raw = mission['source_group']
+                target_raw = mission['destination_group']
+                filter_type = mission.get('filter_type', 'all')
+                
+                print(f"\n🚀 [بدء المعركة الكبرى] غزو الوجهة: {target_raw} من المصدر: {source_raw}")
+                
+                account_list = await get_active_sessions()
+                if not account_list:
+                    print("⚠️ تحذير: لا توجد حسابات نشطة في الأسطول!")
+                    supabase.table("adding_missions").update({
+                        "status": "failed", 
+                        "status_log": "فشلت المهمة: لا توجد حسابات جاهزة في الأسطول."
+                    }).eq("id", mission_id).execute()
+                    continue
 
-            if hasattr(message, 'reactions') and message.reactions and getattr(message.reactions, 'recent_reactions', None):
-                for reaction in message.reactions.recent_reactions:
-                    u_id = getattr(reaction.peer_id, 'user_id', None)
-                    if u_id and u_id not in seen_ids:
+                # 1. استخدام أول حساب رئيسي كـ رادار عملاق لسحب الأعضاء المتفاعلين والرسائل والتفاعلات
+                master_acc = account_list[0]
+                master_client = TelegramClient(StringSession(master_acc['session_string']), API_ID, API_HASH)
+                scraped_users = []
+                seen_ids = set()
+
+                try:
+                    await master_client.connect()
+                    await safe_join_chat(master_client, source_raw)
+                    
+                    src_entity = await master_client.get_entity(source_raw.replace("https://t.me/", "").replace("@", "").strip())
+                    
+                    # سحب القائمة المباشرة
+                    participants = await master_client.get_participants(src_entity, limit=3000)
+                    for u in participants:
+                        if not getattr(u, 'bot', False) and not getattr(u, 'deleted', False) and u.username:
+                            if filter_type == "online" and not hasattr(u.status, 'UserStatusOnline'): 
+                                continue
+                            if u.id not in seen_ids:
+                                seen_ids.add(u.id)
+                                scraped_users.append(u)
+
+                    # سحب المتفاعلين من الرسائل والإيموجي (الكنز الحقيقي)
+                    async for message in master_client.iter_messages(src_entity, limit=3000):
+                        if message.sender_id and message.sender_id not in seen_ids:
+                            try:
+                                user = await master_client.get_entity(message.sender_id)
+                                if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False) and user.username:
+                                    seen_ids.add(user.id)
+                                    scraped_users.append(user)
+                            except Exception:
+                                pass
+                                
+                        if hasattr(message, 'reactions') and message.reactions and getattr(message.reactions, 'recent_reactions', None):
+                            for reaction in message.reactions.recent_reactions:
+                                u_id = getattr(reaction.peer_id, 'user_id', None)
+                                if u_id and u_id not in seen_ids:
+                                    try:
+                                        user = await master_client.get_entity(u_id)
+                                        if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False) and user.username:
+                                            seen_ids.add(user.id)
+                                            scraped_users.append(user)
+                                    except Exception:
+                                        pass
+
+                    print(f"🎯 [تم بنجاح] تم استخراج وتصفية {len(scraped_users)} عضو حقيقي ومتفاعل جاهز للضخ الفوري.")
+                except Exception as e:
+                    print(f"❌ فشل الرادار الرئيسي في السحب: {e}")
+                    supabase.table("adding_missions").update({
+                        "status": "failed", 
+                        "status_log": f"فشل السحب من المصدر: {str(e)}"
+                    }).eq("id", mission_id).execute()
+                    continue
+                finally:
+                    await master_client.disconnect()
+
+                if not scraped_users:
+                    supabase.table("adding_missions").update({
+                        "status": "completed", 
+                        "status_log": "انتهى الفحص: لم يتم العثور على أعضاء مطابقين."
+                    }).eq("id", mission_id).execute()
+                    continue
+
+                # 2. عملية الضخ والإضافة التوازية عبر جيش الحسابات
+                acc_index = 0
+                added_count = mission.get('progress', 0)
+                account_stats = {}
+
+                for user in scraped_users:
+                    if not account_list:
+                        print("🚨 نفدت جميع حسابات الأسطول!")
+                        supabase.table("adding_missions").update({
+                            "status": "failed", 
+                            "status_log": f"توقف: نفدت الحسابات بعد نقل {added_count} عضو."
+                        }).eq("id", mission_id).execute()
+                        break
+                        
+                    if acc_index >= len(account_list):
+                        acc_index = 0
+                        
+                    current_acc = account_list[acc_index]
+                    phone = current_acc.get("phone", "Unknown")
+                    
+                    if account_stats.get(phone, 0) >= MAX_ADDS_PER_ACCOUNT:
+                        print(f"🎖️ الحساب +{phone} أتم حصته الكاملة ({MAX_ADDS_PER_ACCOUNT} عضو)، يتم تدويره لإراحة الحساب.")
+                        account_list.pop(acc_index)
+                        continue
+
+                    client = TelegramClient(StringSession(current_acc['session_string']), API_ID, API_HASH)
+
+                    try:
+                        await client.connect()
+                        
+                        # انضمام الحساب للوجهة والمصدر بذكاء
+                        await safe_join_chat(client, target_raw)
+                        
+                        target_clean = target_raw.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
+                        target_entity = await client.get_entity(target_clean)
+                        
+                        # ضربة الإضافة الصاروخية
+                        user_to_add = await client.get_input_entity(user)
+                        await client(InviteToChannelRequest(target_entity, [user_to_add]))
+                        
+                        added_count += 1
+                        account_stats[phone] = account_stats.get(phone, 0) + 1
+                        
+                        print(f"⚡ [نجاح ساحق] الحساب +{phone} أضاف @{user.username} | إجمالي المجموع: {added_count}")
+                        
+                        # تحديث فوري ولحظي في قاعدة البيانات لكي تتحرك الواجهة أمام المشترك
+                        supabase.table("adding_missions").update({
+                            "progress": added_count,
+                            "status_log": f"الحساب +{phone} أضاف العضو @{user.username} بنجاح (العدد: {added_count})"
+                        }).eq("id", mission_id).execute()
+                        
+                        # فاصل زمني فائق السرعة والأمان
+                        await asyncio.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
+                        
+                    except ChatAdminRequiredError:
+                        print(f"🚨 خطأ: مجموعة الوجهة مغلقة وصلاحيات الإضافة للمشرفين فقط!")
+                        supabase.table("adding_missions").update({
+                            "status": "failed",
+                            "status_log": "فشلت المهمة: مجموعة الوجهة مغلقة ولا تقبل الإضافة العادية."
+                        }).eq("id", mission_id).execute()
+                        break
+
+                    except FloodWaitError as e:
+                        print(f"⚠️ الحساب +{phone} اصطدم بفلوود ({e.seconds} ثانية).. استبدال فوري.")
+                        account_list.pop(acc_index)
                         try:
-                            user = await master_client.get_entity(u_id)
-                            if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
-                                seen_ids.add(user.id)
-                                scraped_users.append((user.id, getattr(user, 'access_hash', None), getattr(user, 'username', None)))
-                                active_from_chat += 1
+                            supabase.table("telegram_accounts").update({"status": "cooldown"}).eq("id", current_acc['id']).execute()
                         except Exception:
                             pass
+                        continue
+                        
+                    except UserPrivacyRestrictedError:
+                        # تخطي صامت وسريع جداً بدون إبطاء المحرك
+                        continue
+                        
+                    except UserAlreadyParticipantError:
+                        continue
+                        
+                    except Exception as error:
+                        print(f"❌ عطل في الحساب +{phone}: {error}")
+                        try:
+                            supabase.table("telegram_accounts").update({"status": "banned"}).eq("id", current_acc['id']).execute()
+                        except Exception:
+                            pass
+                        account_list.pop(acc_index)
+                        continue
+                    finally:
+                        await client.disconnect()
+                        
+                    acc_index += 1
 
-        print(f"🔥 [النتيجة الفائقة] تم فحص {msg_count} رسالة واستخراج {active_from_chat} عضو متفاعل جديد!")
-    except Exception as e:
-        print(f"❌ حدث خطأ أثناء فحص الرسائل والتفاعلات: {e}")
+                supabase.table("adding_missions").update({
+                    "status": "completed", 
+                    "status_log": f"👑 اكتملت الحملة بنجاح أسطوري! تم ضخ {added_count} عضو حقيقي."
+                }).eq("id", mission_id).execute()
+                print(f"🏁 انتهت المهمة بنجاح تام. إجمالي المنقولين: {added_count}")
 
-    print(f"🎯 المجموع الكلي للجاهزين للإضافة: {len(scraped_users)} عضو نشط.")
-    return scraped_users
+        except Exception as global_error:
+            print(f"🚨 خطأ عام بالمحرك: {global_error}")
+            await asyncio.sleep(3)
 
-
-async def process_account_queue(acc_data: dict, user_queue: list, source_raw: str, target_raw: str, api_id: int, api_hash: str):
-    phone = acc_data.get("phone", "Unknown")
-    session_str = acc_data.get("session_string")
-    
-    client = TelegramClient(StringSession(session_str), api_id, api_hash)
-    adds_count = 0
-    
-    try:
-        await client.connect()
-        
-        if not await client.is_user_authorized():
-            err_msg = f"❌ [حذف تلقائي] الحساب {phone} غير مفعل! جاري مسحه..."
-            await send_telegram_notification(err_msg)
-            try:
-                supabase.table("telegram_accounts").delete().eq("phone", phone).execute()
-            except Exception:
-                pass
-            return
-
-        joined_src = await safe_join_chat(client, source_raw)
-        if joined_src:
-            print(f"✅ [الحساب {phone}] انضم للقروب المصدر بنجاح!")
-            await send_telegram_notification(f"🔗 [الحساب {phone}] دخل القروب المصدر بنجاح.")
-        else:
-            await send_telegram_notification(f"⚠️ [الحساب {phone}] تعذر انضمامه للمصدر، جاري المحاولة بشكل مباشر...")
-
-        joined_trg = await safe_join_chat(client, target_raw)
-        if not joined_trg:
-            await send_telegram_notification(f"🛑 [الحساب {phone}] فشل بالانضمام للجروب الهدف! تم إيقاف هذا الحساب.")
-            return
-
-        target_clean = target_raw.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
-        target_entity = await client.get_entity(target_clean)
-
-        # جلب قائمة الأعضاء من المصدر مع ضمان جلب عدد أكبر كاحتياطي لتغطية من لديهم خصوصية
-        participants = await client.get_participants(source_raw)
-        
-        for user in participants:
-            if adds_count >= MAX_ADDS_PER_ACCOUNT:
-                print(f"🎉 وصل الحساب {phone} إلى الحد الأقصى المطلوب ({MAX_ADDS_PER_ACCOUNT} عضو ناجح).")
-                break
-                
-            try:
-                user_to_add = await client.get_input_entity(user)
-
-                await client(InviteToChannelRequest(target_entity, [user_to_add]))
-                adds_count += 1
-                
-                log_msg = f"✅ [نجاح] الحساب {phone} أضاف: ({user.first_name or user.id}) | إجمالي الحساب: {adds_count}"
-                print(log_msg)
-                await send_telegram_notification(log_msg)
-                
-                # فاصل زمني عشوائي للحماية من الحظر
-                await asyncio.sleep(random.randint(MIN_DELAY, MAX_DELAY))
-
-            except UserPrivacyRestrictedError:
-                # هذا العضو لديه خصوصية، نتخطاه بصمت ونبحث عن غيره فوراً لتعويضه
-                continue
-            except UserNotMutualContactError:
-                await send_telegram_notification(f"⚠️ [قيود] الحساب {phone} مقيد مؤقتاً.")
-                continue
-            except ChatAdminRequiredError:
-                await send_telegram_notification(f"🛑 [إعدادات الجروب] الجروب يمنع إضافة الأعضاء إلا للمشرفين!")
-                break
-            except FloodWaitError as e:
-                wait_time = getattr(e, 'seconds', 60)
-                print(f"⏳ [تليجرام يطلب الانتظار] الحساب {phone} سينتظر {wait_time} ثانية...")
-                await send_telegram_notification(f"⏳ الحساب {phone} اصطدم بمهلة انتظر {wait_time} ثانية...")
-                await asyncio.sleep(wait_time + 5)
-                continue
-            except PeerFloodError:
-                await asyncio.sleep(180)
-                continue
-            except Exception:
-                continue
-    except Exception as e:
-        pass
-    finally:
-        await client.disconnect()
-
+if __name__ == "__main__":
+    asyncio.run(dragon_ultimate_engine())
 
 async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_group: str):
     if not accounts_data:
