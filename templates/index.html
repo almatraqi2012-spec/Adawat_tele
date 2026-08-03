@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dragon Engine Pro - المحرك الخارق</title>
     <style>
-        body { font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; padding: 20px; display: flex; justify-content: center; }
-        .card { background: #111827; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.6); border: 1px solid #1f2937; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #0b0f19; color: #f8fafc; padding: 20px; display: flex; justify-content: center; flex-direction: column; align-items: center; }
+        .card { background: #111827; padding: 25px; border-radius: 16px; max-width: 520px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.6); border: 1px solid #1f2937; margin-bottom: 20px; box-sizing: border-box; }
         h2 { color: #38bdf8; text-align: center; margin-bottom: 15px; font-size: 22px; font-weight: 800; }
         
         .sub-box { background: #1e1b4b; border: 1px solid #6366f1; border-radius: 10px; padding: 15px; text-align: center; margin-bottom: 20px; }
@@ -19,7 +19,7 @@
 
         label { display: block; margin-top: 12px; font-size: 13px; color: #94a3b8; }
         input { width: 100%; padding: 12px; margin-top: 6px; border-radius: 8px; border: 1px solid #374151; background: #030712; color: white; box-sizing: border-box; font-size: 15px; }
-        button { width: 100%; padding: 12px; margin-top: 10px; border: none; border-radius: 8px; background: #0284c7; color: white; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button { width: 100%; padding: 12px; margin-top: 10px; border: none; border-radius: 8px; background: #0284c7; color: white; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; box-sizing: border-box; }
         button:hover { opacity: 0.9; transform: translateY(-1px); }
         .btn-green { background: #059669; }
         .btn-orange { background: #ea580c; }
@@ -31,7 +31,7 @@
         hr { border: 0; height: 1px; background: #1f2937; margin: 20px 0; }
 
         .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); justify-content: center; align-items: center; z-index: 1000; backdrop-filter: blur(4px); }
-        .modal-content { background: #111827; padding: 25px; border-radius: 14px; max-width: 420px; width: 90%; text-align: center; border: 1px solid #38bdf8; }
+        .modal-content { background: #111827; padding: 25px; border-radius: 14px; max-width: 420px; width: 90%; text-align: center; border: 1px solid #38bdf8; box-sizing: border-box; }
         .crypto-addr { background: #030712; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 13px; color: #38bdf8; word-break: break-all; margin: 10px 0; border: 1px dashed #374151; }
     </style>
 </head>
@@ -95,6 +95,10 @@
         <div id="verifyBox" style="display:none;">
             <label>كود التحقق الواصل للتليجرام:</label>
             <input type="text" id="otpCode" placeholder="12345">
+            
+            <label>كلمة المرور (التحقق بخطوتين إن وجدت):</label>
+            <input type="password" id="passInput" placeholder="أتركها فارغة إذا لم تكن مفعلة">
+
             <button onclick="verifyCode()" class="btn-green">ربط الرقم بالأسطول 🛡️</button>
         </div>
 
@@ -108,23 +112,23 @@
         
         <hr>
         
-        <!-- 2️⃣ إطلاق الحملة الخارقة (توازٍ كامل) -->
-    <!-- 2️⃣ إطلاق الحملة الخارقة (توازٍ كامل) -->
-    <div class="card" style="margin-top: 20px; width: 100%; box-sizing: border-box;">
-        <h3>2️⃣ إطلاق الحملة الخارقة (توازٍ كامل)</h3>
-        <label>الجروب المصدر (السحب منه):</label>
-        <input type="text" id="sourceGroup" placeholder="https://t.me/source_group" style="width: 100%; box-sizing: border-box;">
-        
-        <label>الجروب الهدف (الإضافة إليه):</label>
-        <input type="text" id="targetGroup" placeholder="https://t.me/target_group" style="width: 100%; box-sizing: border-box;">
-        
-        <button onclick="startAdding()" class="btn-green" style="width: 100%; margin-top: 10px;">⚡ إطلاق السحب والإضافة التوافقية</button>
-        
-        <div id="statusBox" class="status"></div>
+        <!-- 2️⃣ إطلاق الحملة الخارقة (توازٍ كامل) - قسم فريد وغير مكرر -->
+        <div>
+            <h3>2️⃣ إطلاق الحملة الخارقة (توازٍ كامل)</h3>
+            <label>الجروب المصدر (السحب منه):</label>
+            <input type="text" id="sourceGroup" placeholder="https://t.me/source_group">
+            
+            <label>الجروب الهدف (الإضافة إليه):</label>
+            <input type="text" id="targetGroup" placeholder="https://t.me/target_group">
+            
+            <button onclick="startAdding()" class="btn-green" style="margin-top: 15px;">⚡ إطلاق السحب والإضافة التوافقية</button>
+            
+            <div id="statusBox" class="status"></div>
+        </div>
     </div>
 
     <!-- 📊 3️⃣ قسم الإحصائيات وسجل الإضافات المباشر -->
-    <div id="stats-container" class="card" style="margin-top: 20px; display: none; width: 100%; box-sizing: border-box;">
+    <div id="stats-container" class="card" style="display: none;">
         
         <!-- كارت الإجمالي -->
         <div style="background: #1a2234; padding: 15px; border-radius: 10px; margin-bottom: 15px; text-align: center;">
@@ -144,17 +148,18 @@
                 </tr>
             </thead>
             <tbody id="accounts-stats-body">
-                <!-- ستظهر البيانات هنا -->
+                <!-- بيانات الحسابات الديناميكية -->
             </tbody>
         </table>
 
-        <!-- سجل الأحداث المباشر (من أضاف من) -->
+        <!-- سجل الأحداث المباشر -->
         <h4 style="color: #fff; margin-bottom: 8px;">📜 سجل الحركات المباشر:</h4>
         <div id="activity-logs" style="background: #0f172a; padding: 10px; border-radius: 8px; max-height: 200px; overflow-y: auto; font-family: monospace; font-size: 12px; text-align: right;">
-            <!-- ستظهر الرسائل الحية هنا -->
+            <!-- السجل الحي -->
         </div>
     </div>
-    <!-- كود الجافاسكربت الخاص بالوظائف -->
+
+    <!-- كود الجافاسكربت المنظم والخالي من التكرار -->
     <script>
         let USER_ID = localStorage.getItem("user_device_id");
         let USER_NAME = localStorage.getItem("user_full_name");
@@ -178,6 +183,16 @@
             el.className = "status " + (isError ? "error" : "success");
             el.innerText = text;
         }
+
+        function copyCrypto() {
+            const addr = document.getElementById("cryptoAddress").innerText;
+            navigator.clipboard.writeText(addr);
+            alert("تم نسخ العنوان بنجاح!");
+        }
+
+        function redirectToBot() {
+            window.open("https://t.me/YOUR_BOT_USERNAME", "_blank");
+        }
         
         async function payOxaPay() {
             if (!USER_ID) {
@@ -188,7 +203,6 @@
             try {
                 showStatus("جاري إنشاء رابط الدفع التلقائي عبر OxaPay...");
         
-        // تم تصحيح الرابط هنا ليتطابق مع السيرفر تماماً
                 const res = await fetch("/api/create-oxapay-payment", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -198,7 +212,6 @@
                 const data = await res.json();
 
                 if (res.ok && data.pay_url) {
-                // فتح رابط الدفع المباشر في نافذة جديدة
                     window.open(data.pay_url, "_blank");
                 } else {
                     alert("خطأ: " + (data.detail || "تعذر إنشاء فاتورة الدفع"));
@@ -208,7 +221,6 @@
             }
         }
         
-        // 1️⃣ تسجيل / تسجيل دخول المستخدم
         async function submitRegister() {
             const fullNameInput = document.getElementById("regFullName");
             const contactInput = document.getElementById("regUserContact");
@@ -278,6 +290,7 @@
                 }
             } catch(e){}
         }
+
         async function updateCount() {
             if (!USER_ID) return;
             try {
@@ -285,25 +298,12 @@
                 if (!res.ok) return;
                 const data = await res.json();
 
-                const totalAddedElem = document.getElementById("totalAdded") || document.getElementById("total-added");
-                if (totalAddedElem && data.total_added !== undefined) {
-                    totalAddedElem.innerText = data.total_added;
-            }
-
-                const statsTableBody = document.getElementById("statsTableBody") || document.getElementById("stats-table-body");
-                if (statsTableBody && data.accounts_stats) {
-                    let rowsHTML = "";
-                    data.accounts_stats.forEach(acc => {
-                        rowsHTML += `<tr>
-                            <td>${acc.phone || acc.phone_number}</td>
-                            <td style="color: #2ecc71;">${acc.success || 0}</td>
-                            <td style="color: #e74c3c;">${acc.failed || 0}</td>
-                        </tr>`;
-                    });
-                    statsTableBody.innerHTML = rowsHTML;
+                const countEl = document.getElementById("accountCount");
+                if (countEl && data.accounts_count !== undefined) {
+                    countEl.innerText = data.accounts_count;
                 }
             } catch (e) {
-                console.error("خطأ في تحديث الإحصائيات:", e);
+                console.error("خطأ في تحديث العداء:", e);
             }
         }
 
@@ -318,11 +318,12 @@
                 if (res.ok && data.accounts && data.accounts.length > 0) {
                     container.innerHTML = "";
                     data.accounts.forEach(acc => {
+                        const phoneNum = acc.phone || acc.phone_number;
                         const div = document.createElement("div");
                         div.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 8px 12px; border-radius: 6px; border: 1px solid #334155; margin-bottom: 6px;";
                         div.innerHTML = `
-                            <span style="font-weight: bold; color: #f8fafc; font-size: 14px;">📱 ${acc.phone || acc.phone_number}</span>
-                            <button onclick="deleteAccount('${acc.phone || acc.phone_number}')" style="background: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; width: auto; margin: 0;">🗑️ حذف</button>
+                            <span style="font-weight: bold; color: #f8fafc; font-size: 14px;">📱 ${phoneNum}</span>
+                            <button onclick="deleteAccount('${phoneNum}')" style="background: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 4px; font-size: 12px; cursor: pointer; width: auto; margin: 0;">🗑️ حذف</button>
                         `;
                         container.appendChild(div);
                     });
@@ -334,7 +335,6 @@
             }
         }
 
-        /// 2️⃣ دالة إرسال كود التحقق (Send Code)
         async function sendCode() {
             const phoneInput = document.getElementById("phone");
             const phone = phoneInput ? phoneInput.value.trim() : "";
@@ -358,7 +358,6 @@
                     phoneHash = data.phone_code_hash || "";
                     showStatus("✅ تم إرسال الكود! ادخله في الخانة أدناه.");
                     
-                    // إظهار حقل إدخال الكود (تأكد من وجود verifyBox أو otpSection حسب رغبتك)
                     const verifyBox = document.getElementById("verifyBox");
                     if(verifyBox) verifyBox.style.display = "block";
                 } else {
@@ -369,12 +368,10 @@
             }
         }
 
-        // 3️⃣ دالة إكمال التوثيق (Verify OTP / Password)
-       // 3️⃣ دالة إكمال التوثيق (Verify OTP / Password)
         async function verifyCode() {
             const phoneInput = document.getElementById("phone");
-            const otpInput = document.getElementById("otpCode"); // تم التصحيح هنا ليطابق id="otpCode" في الـ HTML
-            const passInput = document.getElementById("passInput"); // إذا كان حقل كلمة المرور موجوداً
+            const otpInput = document.getElementById("otpCode");
+            const passInput = document.getElementById("passInput");
 
             const phone = phoneInput ? phoneInput.value.trim() : "";
             const code = otpInput ? otpInput.value.trim() : "";
@@ -403,6 +400,9 @@
 
                 if (res.ok && data.status === "success") {
                     showStatus("🎉 تم توثيق وإضافة الرقم للأسطول بنجاح!");
+                    document.getElementById("verifyBox").style.display = "none";
+                    if(otpInput) otpInput.value = "";
+                    if(passInput) passInput.value = "";
                     await updateCount();
                     await loadAccountsList();
                 } else {
@@ -412,35 +412,9 @@
                 showStatus("💥 خطأ أثناء التوثيق بالسيرفر", true);
             }
         }
-        async function payOxaPay() {
-            if (!USER_ID) {
-            alert("يرجى تسجيل الدخول أو تحديد الحساب أولاً!");
-               return;
-            }
 
-           try {
-               showStatus("جاري إنشاء رابط الدفع التلقائي عبر OxaPay...");
-        
-               const res = await fetch("/api/create-oxapay-payment", {
-                   method: "POST",
-                   headers: { "Content-Type": "application/json" },
-                   body: JSON.stringify({ user_id: USER_ID })
-               });
-        
-               const data = await res.json();
-
-               if (res.ok && data.pay_url) {  // وتأكد أيضاً من تطابق اسم المفتاح pay_url قادماً من السيرفر
-                   window.open(data.pay_url, "_blank");
-               } else {
-                   alert("خطأ: " + (data.detail || "تعذر إنشاء فاتورة الدفع"));
-               }
-           } catch (e) {
-               alert("فشل الاتصال بالسيرفر لإنشاء الدفع التلقائي.");
-           }
-        }
-        // 4️⃣ دالة حذف حساب من الأسطول
         async function deleteAccount(phoneNumber) {
-            if (!confirm(`هل أنت تأكد من حذف الرقم ${phoneNumber} من الأسطول؟`)) return;
+            if (!confirm(`هل أنت متأكد من حذف الرقم ${phoneNumber} من الأسطول؟`)) return;
 
             showStatus("جاري حذف الرقم من قاعدة البيانات...");
             try {
@@ -460,9 +434,8 @@
             } catch (e) {
                 showStatus("خطأ في الاتصال بالسيرفر أثناء الحذف", true);
             }
-         }
+        }
 
-        // 5️⃣ دالة إطلاق حملة السحب والإضافة
         async function startAdding() {
             const srcInput = document.getElementById("sourceGroup");
             const trgInput = document.getElementById("targetGroup");
@@ -475,7 +448,7 @@
                 return;
             }
 
-            showStatus("⚡ جاري إطلاق أسطول الحسابات للبدء بالإصافة...");
+            showStatus("⚡ جاري إطلاق أسطول الحسابات للبدء بالإضافة...");
 
             try {
                 const res = await fetch("/api/start-adding", {
@@ -502,7 +475,6 @@
             }
         }
 
-        // 6️⃣ دالة جلب وتحديث الإحصائيات وسجل الحركات
         async function updateDetailedStats() {
             const targetUserId = typeof USER_ID !== "undefined" && USER_ID ? USER_ID : localStorage.getItem("user_device_id");
             if (!targetUserId) return;
@@ -516,10 +488,10 @@
                     if(statsBox) statsBox.style.display = "block";
 
                     const totalEl = document.getElementById("total-added-count");
-                    if(totalEl) totalEl.innerText = data.campaign.total_added || 0;
+                    if(totalEl && data.campaign) totalEl.innerText = data.campaign.total_added || 0;
 
                     const statusEl = document.getElementById("campaign-status");
-                    if(statusEl) {
+                    if(statusEl && data.campaign) {
                         statusEl.innerText = 
                             data.campaign.status === "completed" ? "مكتملة 🎉" : 
                             data.campaign.status === "failed" ? "متوقفة 🔴" : "جارية الآن ⚡";
@@ -562,22 +534,21 @@
             }
         }
 
-        // 🟢 التشغيل الأولي عند فتح الصفحة
         if (USER_ID) {
             checkSub();
             updateCount();
             loadAccountsList();
             updateDetailedStats();
+            setInterval(updateDetailedStats, 5000); // تحديث دوري للإحصائيات وسجل الحركات
         }
 
-        // تشغيل التحديث التلقائي كل 3 ثوانٍ
-        // تشغيل دالة التحديث فور فتح الصفحة
-document.addEventListener("DOMContentLoaded", () => {
-    updateCount();
-    loadAccountsList();
-
-    // 🔄 تحديث الإحصائيات تلقائياً كل 5 ثوانٍ
-    setInterval(updateCount, 5000); 
-});
+        document.addEventListener("DOMContentLoaded", () => {
+            if (USER_ID) {
+                updateCount();
+                loadAccountsList();
+            }
+            setInterval(updateCount, 10000); 
+        });
     </script>
-                
+</body>
+</html>
