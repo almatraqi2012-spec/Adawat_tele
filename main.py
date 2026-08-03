@@ -370,9 +370,9 @@ async def verify_code(req: VerifyRequest):
         supabase.table("telegram_accounts").insert({
             "user_id": req.user_id,
             "phone": phone,
-            "session_string": final_session
+            "session_string": final_session,
+            "status": "ready"
         }).execute()
-
         if user_key in pending_sessions:
             del pending_sessions[user_key]
 
