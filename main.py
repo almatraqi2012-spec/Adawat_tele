@@ -119,6 +119,17 @@ async def register_user(req: RegisterUserRequest):
         
         if existing.data and len(existing.data) > 0:
             user_id = existing.data[0]["user_id"]
+            
+            # التأكد من وجود سجل له في جدول الاشتراكات حتى لو لم يكن موجوداً سابقاً
+            sub_check = supabase.table("users_subscriptions").select("user_id").eq("user_id", user_id).execute()
+            if not sub_check.data:
+                supabase.table("users_subscriptions").insert({
+                    "user_id": user_id,
+                    "username": clean_contact,
+                    "is_active": False,
+                    "subscription_end": None
+                }).execute()
+
             return {
                 "status": "success", 
                 "user_id": user_id, 
@@ -127,12 +138,14 @@ async def register_user(req: RegisterUserRequest):
 
         user_id = 'user_' + uuid.uuid4().hex[:9]
         
+        # إدخال المستخدم في جدول users1
         supabase.table("users1").insert({
             "user_id": user_id,
             "full_name": clean_name,
             "username_or_phone": clean_contact
         }).execute()
 
+        # إدخال المستخدم فوراً في جدول users_subscriptions لضمان ظهوره عندك للتفعيل
         supabase.table("users_subscriptions").insert({
             "user_id": user_id,
             "username": clean_contact,
@@ -156,6 +169,7 @@ async def register_user(req: RegisterUserRequest):
         }
         
     except Exception as e:
+        print(f"❌ Error in register-user: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/subscription-status")
@@ -367,12 +381,14 @@ async def verify_code(req: VerifyRequest):
         final_session = client.session.save()
         await client.disconnect()
 
+        # حفظ الحساب مع تعيين الحالة ready تلقائياً ليعمل فوراً في الأسطول
         supabase.table("telegram_accounts").insert({
             "user_id": req.user_id,
             "phone": phone,
             "session_string": final_session,
             "status": "ready"
         }).execute()
+
         if user_key in pending_sessions:
             del pending_sessions[user_key]
 
@@ -436,7 +452,6 @@ async def safe_join_chat(client: TelegramClient, raw_url: str) -> bool:
     except Exception:
         return False
 
-# الإعدادات السرعة والتحكم
 MAX_ADDS_PER_ACCOUNT = 50
 MIN_DELAY = 2.0  
 MAX_DELAY = 4.0  
