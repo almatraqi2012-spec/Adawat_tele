@@ -88,13 +88,13 @@ def check_user_subscription(user_id: str) -> bool:
         return True
     return False
 
-async def send_telegram_notification(text: str):
-    """إرسال إشعار تليجرام بشكل غير متزامن لتجنب تعطيل السيرفر"""
+def send_telegram_notification(text: str):
+    """إرسال إشعار تليجرام بشكل مضمون وفوري للإدارة"""
     try:
         url = f"https://api.telegram.org/bot{ADMIN_TELEGRAM_BOT_TOKEN}/sendMessage"
         payload = {"chat_id": ADMIN_CHAT_ID, "text": text, "parse_mode": "HTML"}
-        async with httpx.AsyncClient() as client:
-            await client.post(url, json=payload, timeout=5.0)
+        response = httpx.post(url, json=payload, timeout=10.0)
+        print(f"Telegram Notification Status: {response.status_code}")
     except Exception as e:
         print(f"فشل إرسال الإشعار: {e}")
 
@@ -140,7 +140,8 @@ async def register_user(req: RegisterUserRequest):
             "subscription_end": None
         }).execute()
 
-        await send_telegram_notification(
+        # إرسال الإشعار الفوري للبوت
+        send_telegram_notification(
             f"🚨 <b>مشترك جديد يسجل في المنصة!</b>\n"
             f"👤 <b>الاسم:</b> {clean_name}\n"
             f"📞 <b>التواصل:</b> {clean_contact}\n"
@@ -437,8 +438,8 @@ async def safe_join_chat(client: TelegramClient, raw_url: str) -> bool:
 
 # الإعدادات السرعة والتحكم
 MAX_ADDS_PER_ACCOUNT = 50
-MIN_DELAY = 2.0  # سرعة خاطفة ودبابة
-MAX_DELAY = 4.0  # حماية ذكية ومضادة للحظر
+MIN_DELAY = 2.0  
+MAX_DELAY = 4.0  
 
 async def get_active_sessions():
     try:
@@ -448,7 +449,6 @@ async def get_active_sessions():
         print(f"❌ خطأ أثناء جلب الحسابات: {e}")
         return []
 
-# المحرك الأسطوري المدمج (سحب ذكي + إضافة متوازية خرافية)
 async def dragon_ultimate_engine():
     print("🔥 [DRAGON ULTIMATE ENGINE v3.0] تم إطلاق المحرك الأقوى في الواقع.. جاهز لكسح الجميع!")
     
@@ -636,7 +636,7 @@ async def dragon_ultimate_engine():
 
 async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_group: str):
     if not accounts_data:
-        await send_telegram_notification("❌ لا توجد حسابات مضافة للتشغيل!")
+        send_telegram_notification("❌ لا توجد حسابات مضافة للتشغيل!")
         return
 
     master_acc = accounts_data[0]
@@ -646,10 +646,10 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
     try:
         await master_client.connect()
         if not await master_client.is_user_authorized():
-            await send_telegram_notification("❌ الحساب الرئيسي لسحب الأعضاء غير مفعل!")
+            send_telegram_notification("❌ الحساب الرئيسي لسحب الأعضاء غير مفعل!")
             return
 
-        await send_telegram_notification("🔍 جاري انضمام الحساب الرئيسي وسحب الأعضاء من المصدر...")
+        send_telegram_notification("🔍 جاري انضمام الحساب الرئيسي وسحب الأعضاء من المصدر...")
         await safe_join_chat(master_client, source_group)
         
         src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
@@ -661,16 +661,16 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
                 scraped_users.append(u)
 
     except Exception as e:
-        await send_telegram_notification(f"💥 خطأ أثناء سحب الأعضاء: {e}")
+        send_telegram_notification(f"💥 خطأ أثناء سحب الأعضاء: {e}")
         return
     finally:
         await master_client.disconnect()
 
     if not scraped_users:
-        await send_telegram_notification("❌ لم يتم العثور على أعضاء أو الجروب المصدر محمي من السحب!")
+        send_telegram_notification("❌ لم يتم العثور على أعضاء أو الجروب المصدر محمي من السحب!")
         return
 
-    await send_telegram_notification(f"🔥 تم سحب ({len(scraped_users)}) عضو بنجاح! جاري التشغيل...")
+    send_telegram_notification(f"🔥 تم سحب ({len(scraped_users)}) عضو بنجاح! جاري التشغيل...")
 
 
 # ==========================================
