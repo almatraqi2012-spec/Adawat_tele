@@ -120,12 +120,10 @@ async def register_user(req: RegisterUserRequest):
         if existing.data and len(existing.data) > 0:
             user_id = existing.data[0]["user_id"]
             
-            # التأكد من وجود سجل له في جدول الاشتراكات حتى لو لم يكن موجوداً سابقاً
             sub_check = supabase.table("users_subscriptions").select("user_id").eq("user_id", user_id).execute()
             if not sub_check.data:
                 supabase.table("users_subscriptions").insert({
                     "user_id": user_id,
-                    "username": clean_contact,
                     "is_active": False,
                     "subscription_end": None
                 }).execute()
@@ -138,22 +136,18 @@ async def register_user(req: RegisterUserRequest):
 
         user_id = 'user_' + uuid.uuid4().hex[:9]
         
-        # إدخال المستخدم في جدول users1
         supabase.table("users1").insert({
             "user_id": user_id,
             "full_name": clean_name,
             "username_or_phone": clean_contact
         }).execute()
 
-        # إدخال المستخدم فوراً في جدول users_subscriptions لضمان ظهوره عندك للتفعيل
         supabase.table("users_subscriptions").insert({
             "user_id": user_id,
-            "username": clean_contact,
             "is_active": False,
             "subscription_end": None
         }).execute()
 
-        # إرسال الإشعار الفوري للبوت
         send_telegram_notification(
             f"🚨 <b>مشترك جديد يسجل في المنصة!</b>\n"
             f"👤 <b>الاسم:</b> {clean_name}\n"
@@ -381,7 +375,6 @@ async def verify_code(req: VerifyRequest):
         final_session = client.session.save()
         await client.disconnect()
 
-        # حفظ الحساب مع تعيين الحالة ready تلقائياً ليعمل فوراً في الأسطول
         supabase.table("telegram_accounts").insert({
             "user_id": req.user_id,
             "phone": phone,
@@ -465,7 +458,7 @@ async def get_active_sessions():
         return []
 
 async def dragon_ultimate_engine():
-    print("🔥 [DRAGON ULTIMATE ENGINE v3.0] تم إطلاق المحرك الأقوى في الواقع.. جاهز للأضافه !")
+    print("🔥 [DRAGON ULTIMATE ENGINE v3.0] تم إطلاق المحرك الأقوى في الواقع.. جاهز لكسح الجميع!")
     
     while True:
         try:
