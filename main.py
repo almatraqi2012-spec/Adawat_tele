@@ -28,6 +28,7 @@ from telethon.errors import (
     FloodWaitError,
     PeerFloodError
 )
+
 app = FastAPI(title="Dragon Engine Pro API")
 
 # تحديد المسار المطلق لمجلد القوالب لضمان العثور عليه في Render
@@ -297,7 +298,6 @@ async def send_code(req: PhoneRequest):
 @app.get("/api/stats")
 async def get_stats(user_id: str):
     try:
-        # جلب عدد الحسابات المربوطة لهذا المستخدم من قاعدة البيانات
         accounts_res = supabase.table("telegram_accounts") \
             .select("id", count="exact") \
             .eq("user_id", user_id) \
@@ -305,7 +305,6 @@ async def get_stats(user_id: str):
         
         total_accounts = accounts_res.count if accounts_res.count is not None else len(accounts_res.data)
 
-        # جلب حالة اشتراك المستخدم
         sub_res = supabase.table("users_subscriptions") \
             .select("is_active") \
             .eq("user_id", user_id) \
@@ -318,7 +317,7 @@ async def get_stats(user_id: str):
         return {
             "status": "success",
             "total": total_accounts,
-            "active": total_accounts if is_active else 0 # أو حساب الحسابات النشطة فعلياً حسب منطق النظام لديك
+            "active": total_accounts if is_active else 0
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -423,38 +422,6 @@ async def safe_join_chat(client: TelegramClient, raw_url: str) -> bool:
                 return True
             except UserAlreadyParticipantError:
                 return True
-            except Exception as e:
-                print(f"فشل الانضمام برابط الدعوة الخاص: {e}")
-                return False
-    
-    clean_name = clean_url.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
-    try:
-        entity = await client.get_entity(clean_name)
-        await client(JoinChannelRequest(entity))
-        return True
-    except UserAlreadyParticipantError:
-        return True
-    except Exception as e:
-        print(f"فشل الانضمام للمجموعة العامة: {e}")
-        return False
-
-
-# الإعدادات السرعة والتحكم
-MAX_ADDS_PER_ACCOUNT = 50
-MIN_DELAY = 2.0  # سرعة خاطفة ودبابة
-MAX_DELAY = 4.0  # حماية ذكية ومضادة للحظر
-
-async def safe_join_chat(client: TelegramClient, raw_url: str) -> bool:
-    clean_url = raw_url.strip()
-    if "+" in clean_url or "joinchat" in clean_url:
-        match = re.search(r'(?:\+|\/joinchat\/)([a-zA-Z0-9_-]+)', clean_url)
-        if match:
-            invite_hash = match.group(1)
-            try:
-                await client(ImportChatInviteRequest(invite_hash))
-                return True
-            except UserAlreadyParticipantError:
-                return True
             except Exception:
                 return False
     
@@ -467,6 +434,11 @@ async def safe_join_chat(client: TelegramClient, raw_url: str) -> bool:
         return True
     except Exception:
         return False
+
+# الإعدادات السرعة والتحكم
+MAX_ADDS_PER_ACCOUNT = 50
+MIN_DELAY = 2.0  # سرعة خاطفة ودبابة
+MAX_DELAY = 4.0  # حماية ذكية ومضادة للحظر
 
 async def get_active_sessions():
     try:
@@ -506,7 +478,6 @@ async def dragon_ultimate_engine():
                     }).eq("id", mission_id).execute()
                     continue
 
-                # 1. استخدام أول حساب رئيسي كـ رادار عملاق لسحب الأعضاء المتفاعلين والرسائل والتفاعلات
                 master_acc = account_list[0]
                 master_client = TelegramClient(StringSession(master_acc['session_string']), API_ID, API_HASH)
                 scraped_users = []
@@ -518,7 +489,6 @@ async def dragon_ultimate_engine():
                     
                     src_entity = await master_client.get_entity(source_raw.replace("https://t.me/", "").replace("@", "").strip())
                     
-                    # سحب القائمة المباشرة
                     participants = await master_client.get_participants(src_entity, limit=3000)
                     for u in participants:
                         if not getattr(u, 'bot', False) and not getattr(u, 'deleted', False) and u.username:
@@ -528,7 +498,6 @@ async def dragon_ultimate_engine():
                                 seen_ids.add(u.id)
                                 scraped_users.append(u)
 
-                    # سحب المتفاعلين من الرسائل والإيموجي (الكنز الحقيقي)
                     async for message in master_client.iter_messages(src_entity, limit=3000):
                         if message.sender_id and message.sender_id not in seen_ids:
                             try:
@@ -569,7 +538,6 @@ async def dragon_ultimate_engine():
                     }).eq("id", mission_id).execute()
                     continue
 
-                # 2. عملية الضخ والإضافة التوازية عبر جيش الحسابات
                 acc_index = 0
                 added_count = mission.get('progress', 0)
                 account_stats = {}
@@ -599,13 +567,11 @@ async def dragon_ultimate_engine():
                     try:
                         await client.connect()
                         
-                        # انضمام الحساب للوجهة والمصدر بذكاء
                         await safe_join_chat(client, target_raw)
                         
                         target_clean = target_raw.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
                         target_entity = await client.get_entity(target_clean)
                         
-                        # ضربة الإضافة الصاروخية
                         user_to_add = await client.get_input_entity(user)
                         await client(InviteToChannelRequest(target_entity, [user_to_add]))
                         
@@ -614,13 +580,11 @@ async def dragon_ultimate_engine():
                         
                         print(f"⚡ [نجاح ساحق] الحساب +{phone} أضاف @{user.username} | إجمالي المجموع: {added_count}")
                         
-                        # تحديث فوري ولحظي في قاعدة البيانات لكي تتحرك الواجهة أمام المشترك
                         supabase.table("adding_missions").update({
                             "progress": added_count,
                             "status_log": f"الحساب +{phone} أضاف العضو @{user.username} بنجاح (العدد: {added_count})"
                         }).eq("id", mission_id).execute()
                         
-                        # فاصل زمني فائق السرعة والأمان
                         await asyncio.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
                         
                     except ChatAdminRequiredError:
@@ -641,7 +605,6 @@ async def dragon_ultimate_engine():
                         continue
                         
                     except UserPrivacyRestrictedError:
-                        # تخطي صامت وسريع جداً بدون إبطاء المحرك
                         continue
                         
                     except UserAlreadyParticipantError:
@@ -670,8 +633,6 @@ async def dragon_ultimate_engine():
             print(f"🚨 خطأ عام بالمحرك: {global_error}")
             await asyncio.sleep(3)
 
-if __name__ == "__main__":
-    asyncio.run(dragon_ultimate_engine())
 
 async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_group: str):
     if not accounts_data:
@@ -681,6 +642,7 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
     master_acc = accounts_data[0]
     master_client = TelegramClient(StringSession(master_acc["session_string"]), API_ID, API_HASH)
 
+    scraped_users = []
     try:
         await master_client.connect()
         if not await master_client.is_user_authorized():
@@ -693,7 +655,10 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
         src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
         src_entity = await master_client.get_entity(src_clean)
         
-        scraped_users = await run_scraper_task(master_client, src_entity)
+        participants = await master_client.get_participants(src_entity, limit=3000)
+        for u in participants:
+            if not getattr(u, 'bot', False) and not getattr(u, 'deleted', False) and u.username:
+                scraped_users.append(u)
 
     except Exception as e:
         await send_telegram_notification(f"💥 خطأ أثناء سحب الأعضاء: {e}")
@@ -705,24 +670,7 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
         await send_telegram_notification("❌ لم يتم العثور على أعضاء أو الجروب المصدر محمي من السحب!")
         return
 
-    await send_telegram_notification(f"🔥 تم سحب ({len(scraped_users)}) عضو بنجاح! جاري تشغيل الأسطول وإدخالهم للمصدر أولاً...")
-
-    user_queue = list(scraped_users)
-    await send_telegram_notification(f"🚀 بدء أسطول الإضافة لـ {len(user_queue)} عضو بشكل مستمر ومتوازي...")
-
-    # دالة فرعية لإدارة استمرار ضخ الحسابات حتى ينتهي الطابور بالكامل
-    async def worker(acc):
-        while user_queue:
-            if not user_queue:
-                break
-            await process_account_queue(acc, user_queue, source_group, target_group, API_ID, API_HASH)
-            await asyncio.sleep(2)
-
-    # تشغيل الأسطول بالكامل بشكل متواصل على الطابور المشترك
-    tasks = [worker(acc) for acc in accounts_data]
-    await asyncio.gather(*tasks)
-
-    await send_telegram_notification("🎉 اكتملت العملية بالكامل وتم إدخال جميع الأعضاء بنجاح!")
+    await send_telegram_notification(f"🔥 تم سحب ({len(scraped_users)}) عضو بنجاح! جاري التشغيل...")
 
 
 # ==========================================
@@ -767,9 +715,9 @@ async def get_detailed_stats(user_id: str, campaign_id: Optional[int] = None):
                 per_account_stats[phone]["failed"] += 1
 
         recent_logs = supabase.table("adding_logs") \
-            .select("account_phone, target_user, status, added_at") \
+            .select("account_phone, target_username, status, created_at") \
             .eq("campaign_id", campaign_id) \
-            .order("added_at", desc=True) \
+            .order("created_at", desc=True) \
             .limit(50) \
             .execute()
 
@@ -778,7 +726,7 @@ async def get_detailed_stats(user_id: str, campaign_id: Optional[int] = None):
             "has_data": True,
             "campaign": campaign,
             "per_account_stats": per_account_stats,
-            "recent_activity_logs": recent_logs.data
+            "recent_logs": recent_logs.data if recent_logs.data else []
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
