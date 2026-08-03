@@ -465,7 +465,7 @@ async def get_active_sessions():
         return []
 
 async def dragon_ultimate_engine():
-    print("🔥 [DRAGON ULTIMATE ENGINE v3.0] تم إطلاق المحرك الأقوى في الواقع.. جاهز لكسح الجميع!")
+    print("🔥 [DRAGON ULTIMATE ENGINE v3.0] تم إطلاق المحرك الأقوى في الواقع.. جاهز للأضافه !")
     
     while True:
         try:
