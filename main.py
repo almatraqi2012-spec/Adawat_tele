@@ -15,7 +15,8 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from supabase import create_client, Client
-
+from pydantic import BaseModel
+from typing import Optional
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import JoinChannelRequest, InviteToChannelRequest
@@ -84,7 +85,13 @@ class AddMembersRequest(BaseModel):
 class DeleteAccountRequest(BaseModel):
     user_id: str
     phone: str
-
+    
+class AddMembersRequest(BaseModel):
+    user_id: str
+    source_group: str
+    target_group: str
+    filter_type: Optional[str] = "all"
+    
 def check_user_subscription(user_id: str) -> bool:
     user_id_str = str(user_id)
     res = supabase.table("users_subscriptions").select("is_active").eq("user_id", user_id_str).execute()
@@ -409,27 +416,33 @@ async def verify_code(req: VerifyRequest):
 # ==========================================
 # 🟢 القسم 5: أمر إطلاق عملية الإضافة (Trigger Endpoint)
 # ==========================================
+
 @app.post("/api/start-adding")
 async def start_adding(req: AddMembersRequest):
-    if not check_user_subscription(req.user_id):
-        raise HTTPException(status_code=403, detail="عذراً، يجب تفعيل الاشتراك أولاً.")
+    try:
+        if not check_user_subscription(req.user_id):
+            raise HTTPException(status_code=403, detail="عذراً، يجب تفعيل الاشتراك أولاً.")
 
-    accounts = supabase.table("telegram_accounts").select("session_string, phone").eq("user_id", req.user_id).execute()
-    if not accounts.data:
-        raise HTTPException(status_code=400, detail="لا توجد حسابات مربوطة في أسطولك.")
+        accounts = supabase.table("telegram_accounts").select("session_string, phone").eq("user_id", req.user_id).execute()
+        if not accounts.data:
+            raise HTTPException(status_code=400, detail="لا توجد حسابات مربوطة في أسطولك.")
 
-    # إنشاء سجل المهمة في جدول adding_missions بحالة running لكي يراها المحرك فوراً
-    mission_data = {
-        "user_id": req.user_id,
-        "source_group": req.source_group,
-        "destination_group": req.target_group,
-        "status": "running",
-        "progress": 0
-    }
-    supabase.table("adding_missions").insert(mission_data).execute()
+        # إدراج المهمة في الجدول لكي يراها المحرك ويبدأ العمل فوراً
+        mission_data = {
+            "user_id": req.user_id,
+            "source_group": req.source_group.strip(),
+            "destination_group": req.target_group.strip(),
+            "status": "running",
+            "progress": 0,
+            "filter_type": req.filter_type
+        }
+        supabase.table("adding_missions").insert(mission_data).execute()
 
-    return {"status": "success", "message": f"⚡ تم إطلاق العملية بنجاح عبر ({len(accounts.data)}) حساب!"}
-
+        return {"status": "success", "message": f"⚡ تم البدء بالفعل عبر ({len(accounts.data)}) حساب! الأعضاء يضافون الآن لجروبك."}
+    
+    except Exception as e:
+        print(f"❌ خطأ في مسار الإطلاق: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ==========================================
 # 🟢 القسم 6: المحرك الخارق (سحب، انضمام، وإضافة متوازية)
