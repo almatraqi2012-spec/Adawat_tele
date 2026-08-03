@@ -294,16 +294,18 @@
         async function updateCount() {
             if (!USER_ID) return;
             try {
-                const res = await fetch(`/api/detailed-stats?user_id=${USER_ID}`);
+                const res = await fetch(`/api/get-accounts?user_id=${USER_ID}`);
                 if (!res.ok) return;
                 const data = await res.json();
-
+        
                 const countEl = document.getElementById("accountCount");
-                if (countEl && data.accounts_count !== undefined) {
-                    countEl.innerText = data.accounts_count;
+                if (countEl) {
+            // التحقق من وجود مصفوفة الأخذ وحساب طولها مباشرة لضمان عدم ظهور صفر أبداً
+                    const count = (data.accounts && Array.isArray(data.accounts)) ? data.accounts.length : (data.count || 0);
+                    countEl.innerText = count;
                 }
             } catch (e) {
-                console.error("خطأ في تحديث العداء:", e);
+                console.error("خطأ في تحديث العداد:", e);
             }
         }
 
