@@ -31,6 +31,10 @@ from telethon.errors import (
 
 app = FastAPI(title="Dragon Engine Pro API")
 
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(dragon_ultimate_engine())
+
 # تحديد المسار المطلق لمجلد القوالب لضمان العثور عليه في Render
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
@@ -414,8 +418,17 @@ async def start_adding(req: AddMembersRequest):
     if not accounts.data:
         raise HTTPException(status_code=400, detail="لا توجد حسابات مربوطة في أسطولك.")
 
-    asyncio.create_task(run_heavy_duty_engine(accounts.data, req.source_group, req.target_group))
-    return {"status": "success", "message": f"⚡ تم البدء بالفعل عبر ({len(accounts.data)}) حساب! الأعضاء يضافون الآن لجروبك."}
+    # إنشاء سجل المهمة في جدول adding_missions بحالة running لكي يراها المحرك فوراً
+    mission_data = {
+        "user_id": req.user_id,
+        "source_group": req.source_group,
+        "destination_group": req.target_group,
+        "status": "running",
+        "progress": 0
+    }
+    supabase.table("adding_missions").insert(mission_data).execute()
+
+    return {"status": "success", "message": f"⚡ تم إطلاق العملية بنجاح عبر ({len(accounts.data)}) حساب!"}
 
 
 # ==========================================
