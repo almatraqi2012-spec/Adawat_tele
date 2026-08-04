@@ -707,7 +707,7 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
     send_telegram_notification(f"🔥 تم سحب ({len(scraped_users)}) عضو بنجاح! جاري التشغيل...")
 
 
-# ==========================================
+# =========================================
 # 📊 API الإحصائيات التفصيلية (سجل الإضافات)
 # ==========================================
 @app.get("/api/detailed-stats")
