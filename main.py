@@ -31,23 +31,19 @@ app = FastAPI()
 
 # دالة إيقاظ ذاتي تمنع سيرفر Render من إطفاء المحرك في الخلفية
 # مسار الإيقاظ الذاتي الخاص بمنصة رندر
-@@app.get("/ping")
+from fastapi.responses import FileResponse
+
+@app.get("/ping")
 async def ping_server():
     return {"status": "Dragon Engine Pro is Alive and Running!"}
 
-# الصفحة الرئيسية التي تعرض واجهة موقعك وجداولك
+# الصفحة الرئيسية - قراءة ملف الhtml مباشرة بدون أي أخطاء جينجا
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    try:
-        # جلب بيانات بسيطة وآمنة لتجنب أي خطأ في القالب
-        return templates.TemplateResponse("index.html", {
-            "request": request,
-            "missions": [],
-            "accounts": []
-        })
-    except Exception as e:
-        print(f"❌ خطأ في عرض الواجهة: {e}")
-        return HTMLResponse(content=f"<h3>خطأ في قالب الواجهة: {e}</h3>", status_code=500)
+    file_path = os.path.join(BASE_DIR, "templates", "index.html")
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    return HTMLResponse(content="<h3>ملف الواجهة index.html غير موجود في مجلد templates!</h3>", status_code=404)
 # إطلاق المحرك حصرياً عند بدء التشغيل
 @app.on_event("startup")
 async def startup_event():
