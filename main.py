@@ -31,7 +31,7 @@ app = FastAPI()
 
 # دالة إيقاظ ذاتي تمنع سيرفر Render من إطفاء المحرك في الخلفية
 # مسار الإيقاظ الذاتي الخاص بمنصة رندر
-@app.get("/ping")
+@@app.get("/ping")
 async def ping_server():
     return {"status": "Dragon Engine Pro is Alive and Running!"}
 
@@ -48,7 +48,6 @@ async def home(request: Request):
     except Exception as e:
         print(f"❌ خطأ في عرض الواجهة: {e}")
         return HTMLResponse(content=f"<h3>خطأ في قالب الواجهة: {e}</h3>", status_code=500)
-
 # إطلاق المحرك حصرياً عند بدء التشغيل
 @app.on_event("startup")
 async def startup_event():
