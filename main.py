@@ -575,6 +575,7 @@ async def dragon_ultimate_engine():
                     continue
 
                 # مرحلة الإضافة مع كشف الأخطاء الصريح
+                # مرحلة الإضافة مع استخدام الكائن المضمون من الحساب الرئيسي
                 acc_index = 0
                 added_count = mission.get('progress', 0)
 
@@ -596,7 +597,11 @@ async def dragon_ultimate_engine():
                         target_clean = target_raw.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
                         target_entity = await client.get_entity(target_clean)
                         
-                        user_to_add = await client.get_input_entity(user)
+                        # 🟢 الحل السليم: استخراج الـ ID والـ Access Hash مباشرة من كائن المستخدم المسحوب 
+                        # دون الحاجة لاستعلام جديد يفشل فيه الحساب الفرعي
+                        from telethon.tl.types import InputUser
+                        user_to_add = InputUser(user.id, user.access_hash)
+                        
                         await client(InviteToChannelRequest(target_entity, [user_to_add]))
                         
                         added_count += 1
@@ -621,8 +626,7 @@ async def dragon_ultimate_engine():
                         account_list.pop(acc_index)
                         continue
                     except Exception as err:
-                        # هذا السطر سيفضح لنا السر تماماً لماذا يرفض الإضافة
-                        print(f"❌ [رفض من تليجرام للحساب +{phone}]: {err}")
+                        print(f"❌ [رفض من تيليجرام للحساب +{phone}]: {err}")
                         acc_index += 1
                         continue
                     finally:
