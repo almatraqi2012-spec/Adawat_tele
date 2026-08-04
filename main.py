@@ -582,12 +582,18 @@ async def dragon_ultimate_engine():
                     current_acc = account_list[acc_index]
                     phone = current_acc.get("phone", "Unknown")
                     
+                    print(f"🔄 جاري استخدام الحساب +{phone} لإضافة العضو...")
                     client = TelegramClient(StringSession(current_acc['session_string']), API_ID, API_HASH)
 
                     try:
                         await client.connect()
                         
-                        # التأكد من انضمام حساب الأسطول للجروب الهدف قبل محاولة الإضافة
+                        # التحقق هل الحساب مصرح أساساً من تليجرام
+                        if not await client.is_user_authorized():
+                            print(f"❌ الجلسة الخاصة بالحساب +{phone} مُبطَلة أو منتهية الصلاحية لدى تليجرام!")
+                            account_list.pop(acc_index)
+                            continue
+
                         await safe_join_chat(client, target_raw)
                         await asyncio.sleep(1.0)
                         
@@ -608,26 +614,26 @@ async def dragon_ultimate_engine():
                         await asyncio.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
                         
                     except ChatAdminRequiredError:
-                        print(f"🚨 خطأ: مجموعة الوجهة مغلقة وصلاحيات الإضافة للمشرفين فقط!")
+                        print("🚨 خطأ: مجموعة الوجهة مغلقة وصلاحيات الإضافة للمشرفين فقط!")
                         supabase.table("adding_missions").update({
                             "status": "failed",
                             "status_log": "فشلت المهمة: مجموعة الوجهة مغلقة ولا تقبل الإضافة العادية."
                         }).eq("id", mission_id).execute()
                         break
                     except FloodWaitError as fe:
-                        print(f"⚠️ الحساب +{phone} اصطدم بفلوود ({fe.seconds} ثانية).. استبدال فوري.")
+                        print(f"⚠️ الحساب +{phone} اصطدم بفلوود ({fe.seconds} ثانية).")
                         account_list.pop(acc_index)
                         continue
                     except UserPrivacyRestrictedError:
-                        print("عضو خصوصيته مغلقة، جاري تخطيه بسلام...")
+                        print("🔒 عضو خصوصيته مغلقة، جاري تخطيه...")
                         acc_index += 1
                         continue
                     except UserAlreadyParticipantError:
-                        print("العضو موجود مسبقاً بالهدف، جاري تخطيه...")
+                        print("📌 العضو موجود مسبقاً بالهدف، جاري تخطيه...")
                         acc_index += 1
                         continue
                     except Exception as error:
-                        print(f"❌ عطل في الحساب +{phone} عند إضافة العضو: {error}")
+                        print(f"❌ خطأ تقني مع الحساب +{phone}: {error}")
                         acc_index += 1
                         continue
                     finally:
