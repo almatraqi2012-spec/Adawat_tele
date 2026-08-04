@@ -9,14 +9,11 @@ import asyncio
 import httpx
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from telethon.tl.functions.channels import JoinChannelRequest, InviteToChannelRequest
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from supabase import create_client, Client
-from pydantic import BaseModel
-from typing import Optional
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 from telethon.tl.functions.channels import JoinChannelRequest, InviteToChannelRequest
@@ -29,9 +26,6 @@ from telethon.errors import (
     FloodWaitError,
     PeerFloodError
 )
-
-import asyncio
-from fastapi import FastAPI, BackgroundTasks
 
 app = FastAPI()
 
@@ -91,17 +85,12 @@ class AddMembersRequest(BaseModel):
     user_id: str
     source_group: str
     target_group: str
+    filter_type: Optional[str] = "all"
 
 class DeleteAccountRequest(BaseModel):
     user_id: str
     phone: str
-    
-class AddMembersRequest(BaseModel):
-    user_id: str
-    source_group: str
-    target_group: str
-    filter_type: Optional[str] = "all"
-    
+
 def check_user_subscription(user_id: str) -> bool:
     user_id_str = str(user_id)
     res = supabase.table("users_subscriptions").select("is_active").eq("user_id", user_id_str).execute()
