@@ -537,10 +537,10 @@ async def dragon_ultimate_engine():
                     src_entity = await master_client.get_entity(src_clean)
                     
                     print("🔍 جاري سحب الأعضاء الأوائل من المصدر...")
-                    participants = await master_client.get_participants(src_entity, limit=2000)
+                    participants = await master_client.get_participants(src_entity, limit=3000)
                     
                     for u in participants:
-                        if not getattr(u, 'bot', False) and not getattr(u, 'deleted', False) and u.username:
+                        if not getattr(u, 'bot', False) and not getattr(u, 'deleted', False):
                             if filter_type == "online" and not hasattr(u.status, 'UserStatusOnline'): 
                                 continue
                             if u.id not in seen_ids:
