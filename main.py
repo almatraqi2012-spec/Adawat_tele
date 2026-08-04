@@ -619,11 +619,11 @@ async def dragon_ultimate_engine():
                         account_list.pop(acc_index)
                         continue
                     except UserPrivacyRestrictedError:
-                        print(عضو خصوصيته مغلقة، جاري تخطيه بسلام...)
+                        print("عضو خصوصيته مغلقة، جاري تخطيه بسلام...")
                         acc_index += 1
                         continue
                     except UserAlreadyParticipantError:
-                        print(العضو موجود مسبقاً بالهدف، جاري تخطيه...)
+                        print("العضو موجود مسبقاً بالهدف، جاري تخطيه...")
                         acc_index += 1
                         continue
                     except Exception as error:
