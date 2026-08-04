@@ -38,7 +38,16 @@ async def ping_server():
 # الصفحة الرئيسية التي تعرض واجهة موقعك وجداولك
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    try:
+        # جلب بيانات بسيطة وآمنة لتجنب أي خطأ في القالب
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "missions": [],
+            "accounts": []
+        })
+    except Exception as e:
+        print(f"❌ خطأ في عرض الواجهة: {e}")
+        return HTMLResponse(content=f"<h3>خطأ في قالب الواجهة: {e}</h3>", status_code=500)
 
 # إطلاق المحرك حصرياً عند بدء التشغيل
 @app.on_event("startup")
