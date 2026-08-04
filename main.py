@@ -10,7 +10,7 @@ import httpx
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import FastAPI, Request, HTTPException, BackgroundTasks
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from supabase import create_client, Client
@@ -29,30 +29,21 @@ from telethon.errors import (
 
 app = FastAPI()
 
+# تحديد المسار المطلق لمجلد القوالب لضمان العثور عليه في Render
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
+
 # دالة إيقاظ ذاتي تمنع سيرفر Render من إطفاء المحرك في الخلفية
 # مسار الإيقاظ الذاتي الخاص بمنصة رندر
-from fastapi.responses import FileResponse
-
 @app.get("/ping")
 async def ping_server():
     return {"status": "Dragon Engine Pro is Alive and Running!"}
 
-# الصفحة الرئيسية - قراءة ملف الhtml مباشرة بدون أي أخطاء جينجا
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    file_path = os.path.join(BASE_DIR, "templates", "index.html")
-    if os.path.exists(file_path):
-        return FileResponse(file_path)
-    return HTMLResponse(content="<h3>ملف الواجهة index.html غير موجود في مجلد templates!</h3>", status_code=404)
 # إطلاق المحرك حصرياً عند بدء التشغيل
 @app.on_event("startup")
 async def startup_event():
     print("🚀 [Render Server] جاري تشغيل المحرك الأسطوري في الخلفية...")
     asyncio.create_task(dragon_ultimate_engine())
-
-# تحديد المسار المطلق لمجلد القوالب لضمان العثور عليه في Render
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://juuleypxvvcfgjdikpwu.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY", "sb_publishable_Kh6iN4Aq6X6gLNcElNzgRg_CjlLMaZL")
@@ -124,7 +115,10 @@ def send_telegram_notification(text: str):
 # ==========================================
 @app.get("/", response_class=HTMLResponse)
 async def serve_dashboard(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
+    file_path = os.path.join(BASE_DIR, "templates", "index.html")
+    if os.path.exists(file_path):
+        return FileResponse(file_path)
+    return HTMLResponse(content="<h3>ملف الواجهة index.html غير موجود في مجلد templates!</h3>", status_code=404)
 
 @app.post("/api/register-user")
 async def register_user(req: RegisterUserRequest):
