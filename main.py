@@ -693,8 +693,7 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
             await master_client(JoinChannelRequest(src_clean))
             await asyncio.sleep(2.0) # مهلة أمان استراتيجية لتثبيت الجلسة ضد الحظر
         except Exception as join_err:
-            print(ملاحظة: قد يكون الحساب منضماً مسبقاً أو هناك تقييد: {join_err})
-
+            print(f"ملاحظة: قد يكون الحساب منضماً مسبقاً أو هناك تقييد: {join_err}")
         # جلب الكيان بطلب آمن
         src_entity = await master_client.get_entity(src_clean)
         await asyncio.sleep(1.0)
