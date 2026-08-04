@@ -586,6 +586,8 @@ async def dragon_ultimate_engine():
 
                     try:
                         await client.connect()
+                        
+                        # التأكد من انضمام حساب الأسطول للجروب الهدف قبل محاولة الإضافة
                         await safe_join_chat(client, target_raw)
                         await asyncio.sleep(1.0)
                         
@@ -596,7 +598,7 @@ async def dragon_ultimate_engine():
                         await client(InviteToChannelRequest(target_entity, [user_to_add]))
                         
                         added_count += 1
-                        print(f"⚡ [نجاح ساحق] الحساب +{phone} أضاف @{getattr(user, 'username', user.id)} | الإجمالي: {added_count}")
+                        print(f"⚡ [نجاح ساحق] الحساب +{phone} أضاف العضو بنجاح | الإجمالي: {added_count}")
                         
                         supabase.table("adding_missions").update({
                             "progress": added_count,
@@ -616,16 +618,23 @@ async def dragon_ultimate_engine():
                         print(f"⚠️ الحساب +{phone} اصطدم بفلوود ({fe.seconds} ثانية).. استبدال فوري.")
                         account_list.pop(acc_index)
                         continue
-                    except (UserPrivacyRestrictedError, UserAlreadyParticipantError):
+                    except UserPrivacyRestrictedError:
+                        print(عضو خصوصيته مغلقة، جاري تخطيه بسلام...)
+                        acc_index += 1
+                        continue
+                    except UserAlreadyParticipantError:
+                        print(العضو موجود مسبقاً بالهدف، جاري تخطيه...)
                         acc_index += 1
                         continue
                     except Exception as error:
-                        print(f"❌ عطل في الحساب +{phone}: {error}")
+                        print(f"❌ عطل في الحساب +{phone} عند إضافة العضو: {error}")
                         acc_index += 1
                         continue
                     finally:
                         await client.disconnect()
 
+                    acc_index += 1
+                        
                 supabase.table("adding_missions").update({
                     "status": "completed", 
                     "status_log": f"👑 اكتملت الحملة بنجاح أسطوري! تم ضخ {added_count} عضو."
