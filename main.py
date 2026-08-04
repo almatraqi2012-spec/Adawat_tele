@@ -279,15 +279,20 @@ async def get_accounts(user_id: str):
 @app.post("/api/delete-account")
 async def delete_account(req: DeleteAccountRequest):
     try:
-        supabase.table("telegram_accounts") \
+        print(f"🗑️ محاولة حذف الحساب - User ID: {req.user_id} | Phone: {req.phone}")
+        
+        response = supabase.table("telegram_accounts") \
             .delete() \
             .eq("user_id", req.user_id) \
             .eq("phone", req.phone) \
             .execute()
+            
+        print(f"✅ استجابة سوبابيس للحذف: {response}")
         return {"status": "success", "message": f"تم حذف الحساب {req.phone} بنجاح!"}
     except Exception as e:
+        print(f"❌ خطأ أثناء الحذف: {e}")
         raise HTTPException(status_code=400, detail=str(e))
-
+        
 @app.post("/api/send-code")
 async def send_code(req: PhoneRequest):
     if not check_user_subscription(req.user_id):
