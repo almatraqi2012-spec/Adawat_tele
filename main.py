@@ -30,9 +30,15 @@ from telethon.errors import (
 app = FastAPI()
 
 # دالة إيقاظ ذاتي تمنع سيرفر Render من إطفاء المحرك في الخلفية
-@app.get("/")
-async def root():
+# مسار الإيقاظ الذاتي الخاص بمنصة رندر
+@app.get("/ping")
+async def ping_server():
     return {"status": "Dragon Engine Pro is Alive and Running!"}
+
+# الصفحة الرئيسية التي تعرض واجهة موقعك وجداولك
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
 
 # إطلاق المحرك حصرياً عند بدء التشغيل
 @app.on_event("startup")
