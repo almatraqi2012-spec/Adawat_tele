@@ -527,35 +527,46 @@ async def dragon_ultimate_engine():
                 try:
                     await master_client.connect()
                     if not await master_client.is_user_authorized():
-                        raise Exception("جلسة الحساب الرئيسي منتهية الصلاحية أو أُبطلت.")
+                        raise Exception("جلسة الحساب الرئيسي منتهية الصلاحية.")
 
-                    # الانضمام الآمن للمصدر
                     await safe_join_chat(master_client, source_raw)
-                    await asyncio.sleep(1.5)
+                    await asyncio.sleep(2.0)
                     
                     src_clean = source_raw.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
                     src_entity = await master_client.get_entity(src_clean)
                     
-                    print("🔍 جاري سحب الأعضاء الأوائل من المصدر...")
-                    participants = await master_client.get_participants(src_entity, limit=3000)
+                    print("🔍 [الرادار البديل الذكي] جاري رصد وسحب المتفاعلين وأصحاب الرسائل من المصدر...")
                     
-                    for u in participants:
-                        if not getattr(u, 'bot', False) and not getattr(u, 'deleted', False):
-                            if filter_type == "online" and not hasattr(u.status, 'UserStatusOnline'): 
-                                continue
-                            if u.id not in seen_ids:
-                                seen_ids.add(u.id)
-                                scraped_users.append(u)
-
-                    print(f"🎯 [تم بنجاح] تم استخراج وتصفية {len(scraped_users)} عضو حقيقي ومتفاعل.")
+                    # سحب آخر 500 رسالة من المجموعة لجلب كل الأعضاء المتفاعلين الحقيقيين الذين يستحيل حجبهم
+                    async for message in master_client.iter_messages(src_entity, limit=500):
+                        if message.sender:
+                            user = message.sender
+                            if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
+                                if filter_type == "online" and not hasattr(user.status, 'UserStatusOnline'): 
+                                    continue
+                                if user.id not in seen_ids:
+                                    seen_ids.add(user.id)
+                                    scraped_users.append(user)
+                    
+                    print(f"🎯 [تم بنجاح] تم استخراج {len(scraped_users)} عضواً حقيقياً ومتفاعلاً من سجل الرسائل.")
                 
                 except Exception as e:
-                    print(f"❌ فشل الرادار الرئيسي في السحب: {e}")
-                    supabase.table("adding_missions").update({
-                        "status": "failed", 
-                        "status_log": f"فشل السحب من المصدر: {str(e)}"
-                    }).eq("id", mission_id).execute()
-                    continue
+                    print(f"❌ فشل سحب الرسائل: {e}")
+                    # محاولة أخيرة بديلة عبر جلب المشاركين بطريقة آمنة
+                    try:
+                        async for user in master_client.iter_participants(src_entity, limit=500):
+                            if not getattr(user, 'bot', False) and not getattr(user, 'deleted', False):
+                                if user.id not in seen_ids:
+                                    seen_ids.add(user.id)
+                                    scraped_users.append(user)
+                        print(f"🎯 [طريقة بديلة نجحت] تم سحب {len(scraped_users)} عضواً.")
+                    except Exception as e2:
+                        print(f"❌ فشل سحب المشاركين أيضاً: {e2}")
+                        supabase.table("adding_missions").update({
+                            "status": "failed", 
+                            "status_log": f"فشل السحب التام من المصدر: {str(e2)}"
+                        }).eq("id", mission_id).execute()
+                        continue
                 finally:
                     await master_client.disconnect()
 
