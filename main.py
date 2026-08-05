@@ -203,7 +203,35 @@ async def oxapay_webhook(request: Request):
         
     return {"status": "ok"}
 
+@app.get("/api/detailed-stats")
+async def get_detailed_stats(user_id: str):
+    try:
+        accounts_res = supabase.table("telegram_accounts").select("id", count="exact").eq("user_id", user_id).execute()
+        total_accounts = accounts_res.count if accounts_res.count is not None else len(accounts_res.data)
 
+        sub_res = supabase.table("users_subscriptions").select("is_active, subscription_end").eq("user_id", user_id).execute()
+
+        is_active = False
+        ends_at = "غير محدد"
+
+        if sub_res.data and len(sub_res.data) > 0:
+            is_active = sub_res.data[0].get("is_active", False)
+            raw_end = sub_res.data[0].get("subscription_end")
+            if raw_end:
+                ends_at = str(raw_end)[:10]
+
+        return {
+            "status": "success",
+            "stats": {
+                "total_accounts": total_accounts,
+                "is_active": is_active,
+                "subscription_status": "نشط 🟢" if is_active else "غير مفعل 🔴",
+                "subscription_end": ends_at
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"فشل جلب الإحصائيات: {str(e)}")
+        
 # ==========================================
 # 🟢 القسم 4: إدارة وتوثيق أرقام تليجرام
 # ==========================================
