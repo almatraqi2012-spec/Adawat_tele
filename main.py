@@ -384,10 +384,6 @@ async def safe_join_chat(client: TelegramClient, raw_url: str) -> bool:
         return False
 
 # إعدادات السرعة مع فواصل آمنة لمنع الحظر
-MAX_ADDS_PER_ACCOUNT = 45
-MIN_DELAY = 4
-MAX_DELAY = 8
-
 
 async def run_scraper_task(master_client: TelegramClient, src_entity) -> list:
     scraped_users = []
@@ -418,7 +414,11 @@ async def run_scraper_task(master_client: TelegramClient, src_entity) -> list:
     return scraped_users
 
 
-async def process_account_queue(acc_data: dict, user_queue: list, target_raw: str, api_id: int, api_hash: str):
+MAX_ADDS_PER_ACCOUNT = 50  # الحد الاقتصادي لكل حساب (مثل المنافسين)
+MIN_DELAY = 2              # سرعة فائقة بين الإضافات
+MAX_DELAY = 4              # حماية خفيفة لعدم الطرد الفوري
+
+async def process_account_queue(acc_data, user_queue, source_raw, target_raw, api_id, api_hash):
     phone = acc_data.get("phone", "Unknown")
     session_str = acc_data.get("session_string")
     
@@ -427,56 +427,56 @@ async def process_account_queue(acc_data: dict, user_queue: list, target_raw: st
     
     try:
         await client.connect()
+        
         if not await client.is_user_authorized():
-            print(f"❌ [جلسة منتهية] الحساب {phone} غير مسجل الدخول.")
+            print(f"❌ الحساب {phone} غير صالح، جاري تخطيه...")
             return
 
-        joined_trg = await safe_join_chat(client, target_raw)
-        if not joined_trg:
-            print(f"❌ [خطأ انضمام] الحساب {phone} فشل في الانضمام للقروب المستهدف.")
+        # الانضمام السريع للهدف والمصدر
+        await safe_join_chat(client, source_raw)
+        if not await safe_join_chat(client, target_raw):
+            print(f"🛑 الحساب {phone} فشل بالدخول للجروب الهدف.")
             return
 
         target_clean = target_raw.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
         target_entity = await client.get_entity(target_clean)
 
-        while user_queue:
-            if adds_count >= MAX_ADDS_PER_ACCOUNT:
-                print(f"🛑 وصل الحساب {phone} للحد الأقصى ({MAX_ADDS_PER_ACCOUNT}).")
-                break
+        while user_queue and adds_count < MAX_ADDS_PER_ACCOUNT:
+            user_info = user_queue.pop(0)
+            u_id, u_hash, u_name = user_info
             
-            user = user_queue.pop(0)
             try:
-                user_to_add = await client.get_input_entity(user)
+                if u_name:
+                    user_to_add = await client.get_input_entity(u_name)
+                else:
+                    user_to_add = await client.get_input_entity(u_id)
+
                 await client(InviteToChannelRequest(target_entity, [user_to_add]))
                 adds_count += 1
+                print(f"🔥 [نجاح صاروخي] الحساب {phone} أضاف العضو رقم {adds_count}")
                 
-                print(f"⚡ [نجاح الإضافة] الحساب {phone} أضاف عضواً بنجاح | المجموع: {adds_count}")
+                # سرعة فائقة بين الإضافات
                 await asyncio.sleep(random.randint(MIN_DELAY, MAX_DELAY))
 
             except UserPrivacyRestrictedError:
-                print(f"⚠️ [تخطي] المستخدم لديه قيود خصوصية (Privacy Restricted).")
+                # خطأ الخصوصية طبيعي جداً، نتخطاه فوراً دون توقف أو إزعاج
                 continue
             except UserNotMutualContactError:
-                print(f"⚠️ [تخطي] المستخدم ليس جهة اتصال متبادلة.")
                 continue
-            except ChatAdminRequiredError:
-                print(f"❌ [خطأ صلاحيات] الحساب {phone} يحتاج صلاحيات مشرف في القروب المستهدف!")
+            except (FloodWaitError, PeerFloodError):
+                # إذا الكود اصطدم بحظر مؤقت، نترك هذا الحساب فوراً وننهي مهمته لكي لا يعطل الباقين
+                print(f"⚠️ الحساب {phone} أصابه تقييد تليجرام، تم إيقافه مؤقتاً والانتقال لغيره.")
                 break
-            except FloodWaitError as e:
-                wait_time = getattr(e, 'seconds', 30)
-                print(f"⏳ [حظر مؤقت FloodWait] الحساب {phone} سينتظر {wait_time} ثانية.")
-                await asyncio.sleep(wait_time + 5)
+            except Exception:
+                # تخطي أي خطأ جانبي بصمت والاستمرار بالسرعة القصوى
                 continue
-            except PeerFloodError:
-                print(f"❌ [حظر نظير PeerFlood] تم تقييد الحساب {phone} مؤقتاً.")
-                break
-            except Exception as ex:
-                print(f"💥 [خطأ أثناء إضافة العضو بالحساب {phone}]: {str(ex)}")
-                continue
-    except Exception as general_err:
-        print(f"💥 [خطأ عام في تشغيل الحساب {phone}]: {str(general_err)}")
+
+    except Exception as e:
+        print(f"💥 خطأ بالحساب {phone}: {e}")
     finally:
         await client.disconnect()
+        print(f"🏁 انتهى الحساب {phone} من دفعة الإضافة بنجاح بإجمالي: {adds_count} عضو.")
+
 
 
 async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_group: str):
