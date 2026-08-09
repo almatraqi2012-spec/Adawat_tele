@@ -316,25 +316,29 @@ async def verify_code(req: VerifyRequest):
             await client.sign_in(phone=phone, code=clean_code, phone_code_hash=phone_code_hash)
         except Exception as sign_in_err:
             if "SessionPasswordNeededError" in str(sign_in_err):
-                if not req.password or not req.password.strip():
-                    raise HTTPException(status_code=400, detail="أدخل كلمة السر (2FA).")
-                await client.sign_in(password=req.password.strip())
+                # التحقق من وجود حقل الباسورد في الطلب إن وجد
+                password = getattr(req, "password", None)
+                if not password or not password.strip():
+                    raise HTTPException(status_code=400, detail="هذا الحساب محمي بكلمة سر (2FA)، يرجى إدخالها.")
+                await client.sign_in(password=password.strip())
             else:
                 raise sign_in_err
         
         final_session = client.session.save()
         await client.disconnect()
 
+        # 🟢 تم إضافة "status": "active" لكي يتطابق مع أعمدة جدولك في Supabase ولا يرفض الحفظ
         supabase.table("telegram_accounts").insert({
             "user_id": req.user_id,
             "phone": phone,
-            "session_string": final_session
+            "session_string": final_session,
+            "status": "active"
         }).execute()
 
         if user_key in pending_sessions:
             del pending_sessions[user_key]
 
-        return {"status": "success", "message": "🟢 تم ربط الرقم بنجاح!"}
+        return {"status": "success", "message": "🟢 تم ربط الرقم بنجاح وحفظه في الأسطول!"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"خطأ في التحقق: {str(e)}")
 
