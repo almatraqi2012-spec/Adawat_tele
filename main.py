@@ -144,7 +144,64 @@ async def register_user(req: RegisterUserRequest):
         return {"status": "success", "user_id": user_id, "message": "تم إنشاء الحساب بنجاح! حسابك بانتظار التفعيل من الإدارة."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+        
+async def handle_user_login(user_id: str, username: str = None):
+    user_id_str = str(user_id)
+    
+    # 1. البحث في Supabase
+    res = supabase.table("users_subscriptions").select("*").eq("user_id", user_id_str).execute()
+    
+    # حالة (1): مستخدم جديد لأول مرة
+    if not res.data:
+        new_user_data = {
+            "user_id": user_id_str,
+            "username": username or "Unknown",
+            "is_active": False,
+            "subscription_end": None
+        }
+        supabase.table("users_subscriptions").insert(new_user_data).execute()
+        
+        return {
+            "status": "NEW_USER",
+            "allowed": False,
+            "message": f"👋 أهلاً بك! هذه أول مرة تسجل فيها بالمحرك.\n🆔 رقم آيديك: `{user_id_str}`\n\n⚠️ حسابك غير مفعل حالياً. ارسل هذا الرقم للإدارة لتنشيط اشتراكك."
+        }
 
+    sub = res.data[0]
+    
+    # حالة (2): غير مفعل يدويًا
+    if not sub.get("is_active"):
+        return {
+            "status": "INACTIVE_USER",
+            "allowed": False,
+            "message": f"⛔️ أهلاً بك مجدداً!\nحسابك (`{user_id_str}`) موجود لدينا لكنه غير مفعل حالياً.\nيرجى التواصل مع الدعم لتشغيله."
+        }
+
+    # حالة (3): فحص التاريخ
+    sub_end_str = sub.get("subscription_end")
+    if not sub_end_str:
+        return {
+            "status": "NO_EXPIRY_SET",
+            "allowed": False,
+            "message": "⚠️ اشتراكك غير مكتمل (لا يوجد تاريخ انتهاء). تواصل مع الدعم."
+        }
+
+    sub_end = datetime.fromisoformat(sub_end_str.replace("Z", "+00:00"))
+    if datetime.now(timezone.utc) > sub_end:
+        supabase.table("users_subscriptions").update({"is_active": False}).eq("user_id", user_id_str).execute()
+        return {
+            "status": "EXPIRED_USER",
+            "message": f"⚠️ انتهت مدة اشتراكك في: ({sub_end.strftime('%Y-%m-%d')}).\nيرجى التجديد للاستمرار."
+        }
+
+    # حالة (4): مفعل
+    return {
+        "status": "ACTIVE_USER",
+        "allowed": True,
+        "message": f"✅ أهلاً بعودتك! اشتراكك فعال ومستمر حتى: {sub_end.strftime('%Y-%m-%d')}"
+    }
+    
+# ==========================================
 @app.get("/api/subscription-status")
 async def subscription_status(user_id: str):
     res = supabase.table("users_subscriptions").select("*").eq("user_id", user_id).execute()
