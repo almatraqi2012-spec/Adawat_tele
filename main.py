@@ -490,47 +490,50 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
         await client.connect()
         
         if not await client.is_user_authorized():
-            print(f"❌ الحساب {phone} غير صالح، جاري تخطيه...")
             return
 
-        # الانضمام السريع للهدف والمصدر
+        # الانضمام الفوري الصاروخي
         await safe_join_chat(client, source_raw)
         if not await safe_join_chat(client, target_raw):
-            print(f"🛑 الحساب {phone} فشل بالدخول للجروب الهدف.")
             return
 
         target_clean = target_raw.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
         target_entity = await client.get_entity(target_clean)
 
+        # حلقة فائقة السرعة تسحب من الطابور العام مباشرة
         while user_queue and adds_count < MAX_ADDS_PER_ACCOUNT:
-            user_info = user_queue.pop(0)
-            u_id, u_hash, u_name = user_info
-            
-            try:
-                if u_name:
-                    user_to_add = await client.get_input_entity(u_name)
-                else:
-                    user_to_add = await client.get_input_entity(u_id)
-
-                await client(InviteToChannelRequest(target_entity, [user_to_add]))
+            # سحب دفعة مصغرة (مثلا 3 أعضاء في كل لفة لتنفيذها معاً أو متتالية وبدون انتظار طويل)
+            batch_users = []
+            while user_queue and len(batch_users) < 3 and adds_count < MAX_ADDS_PER_ACCOUNT:
+                batch_users.append(user_queue.pop(0))
                 adds_count += 1
-                print(f"🔥 [نجاح صاروخي] الحساب {phone} أضاف العضو رقم {adds_count}")
-                
-                # سرعة فائقة بين الإضافات
-                await asyncio.sleep(random.randint(MIN_DELAY, MAX_DELAY))
 
-            except UserPrivacyRestrictedError:
-                # خطأ الخصوصية طبيعي جداً، نتخطاه فوراً دون توقف أو إزعاج
-                continue
-            except UserNotMutualContactError:
-                continue
-            except (FloodWaitError, PeerFloodError):
-                # إذا الكود اصطدم بحظر مؤقت، نترك هذا الحساب فوراً وننهي مهمته لكي لا يعطل الباقين
-                print(f"⚠️ الحساب {phone} أصابه تقييد تليجرام، تم إيقافه مؤقتاً والانتقال لغيره.")
+            if not batch_users:
                 break
-            except Exception:
-                # تخطي أي خطأ جانبي بصمت والاستمرار بالسرعة القصوى
-                continue
+
+            # تنفيذ الإضافة الفورية لكل دفعة
+            for user_obj in batch_users:
+                try:
+                    user_to_add = await client.get_input_entity(user_obj)
+                    await client(InviteToChannelRequest(target_entity, [user_to_add]))
+                    print(f"⚡ [سرعة البرق] الحساب {phone} أضاف عضو بنجاح (الإجمالي: {adds_count})")
+                except UserPrivacyRestrictedError:
+                    continue
+                except UserNotMutualContactError:
+                    continue
+                except (FloodWaitError, PeerFloodError):
+                    print(f"⚠️ الحساب {phone} وصل لحد التقييد، تم تحريره.")
+                    return  # خروج هذا الحساب فوراً لعدم إعاقة البقية
+                except Exception:
+                    continue
+
+            # سرعة البرق: بدون انتظار أو بانتظار شبه معدوم (0.5 إلى 1 ثانية فقط)
+            await asyncio.sleep(random.uniform(0.5, 1.0))
+
+    except Exception:
+        pass
+    finally:
+        await client.disconnect()
 
     except Exception as e:
         print(f"💥 خطأ بالحساب {phone}: {e}")
@@ -540,12 +543,12 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
 
 
 
-async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_group: str):
+async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_group: str, api_id: int, api_hash: str):
     if not accounts_data:
         return
 
     master_acc = accounts_data[0]
-    master_client = TelegramClient(StringSession(master_acc["session_string"]), API_ID, API_HASH)
+    master_client = TelegramClient(StringSession(master_acc["session_string"]), api_id, api_hash)
 
     try:
         await master_client.connect()
@@ -576,7 +579,8 @@ async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_g
         while user_queue:
             if not user_queue:
                 break
-            await process_account_queue(acc, user_queue, target_group, API_ID, API_HASH)
+            # تصحيح تمرير الوسائط بالترتيب الصحيح تماماً
+            await process_account_queue(acc, user_queue, source_group, target_group, api_id, api_hash)
             await asyncio.sleep(2)
 
     tasks = [worker(acc) for acc in accounts_data]
