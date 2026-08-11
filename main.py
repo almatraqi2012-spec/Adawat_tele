@@ -529,12 +529,7 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
 
             # سرعة البرق: بدون انتظار أو بانتظار شبه معدوم (0.5 إلى 1 ثانية فقط)
             await asyncio.sleep(random.uniform(0.5, 1.0))
-
-    except Exception:
-        pass
-    finally:
-        await client.disconnect()
-
+            
     except Exception as e:
         print(f"💥 خطأ بالحساب {phone}: {e}")
     finally:
