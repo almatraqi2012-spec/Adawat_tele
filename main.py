@@ -563,11 +563,20 @@ async def run_heavy_duty_engine(accounts_data, source_group, target_group, api_i
     await send_telegram_notification(f"🚀 [السرعة القصوى] بدء ضخ {len(user_queue)} عضو عبر الأسطول المتوازي!")
 
     async def worker(acc):
-        while user_queue:
-            if not user_queue:
-                break
-            await process_account_queue(acc, user_queue, source_group, target_group, api_id, api_hash)
-            await asyncio.sleep(2)
+    global user_queue
+    while user_queue:
+        if not user_queue:
+            break
+        
+        # اجعل الحساب يأخذ دفعة صغيرة جداً فقط (مثلاً 3 إلى 5 أعضاء) ثم يتوقف ويرتاح
+        success_count = await process_account_small_batch(acc, user_queue, source_group, target_group, max_adds=3)
+        
+        # إذا تم تقييد الحساب، نخرجه من الأسطول بهدوء لكي لا يعطل البقية
+        if success_count == -1:
+            break
+            
+        # استراحة قصيرة جداً (ثانية أو ثانتين) قبل أن يعود دوره مجدداً في الطابور
+        await asyncio.sleep(2)
 
     tasks = [worker(acc) for acc in accounts_data]
     await asyncio.gather(*tasks)
