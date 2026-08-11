@@ -251,63 +251,54 @@ async def oxapay_webhook(request: Request):
 # 🟢 القسم 4: إدارة وتوثيق أرقام تليجرام والإحصائيات المحدثة
 # ==========================================
 @app.get("/api/user-stats")
+# دالة مساعدة مركزية لجلب البيانات المشتركة
+async def fetch_user_stats_data(user_id: str):
+    accounts_res = supabase.table("telegram_accounts").select("id, phone", count="exact").eq("user_id", user_id).execute()
+    total_accounts = accounts_res.count if accounts_res.count is not None else len(accounts_res.data)
+    
+    sub_res = supabase.table("users_subscriptions").select("is_active, subscription_end").eq("user_id", user_id).execute()
+
+    is_active = False
+    ends_at = "غير محدد"
+    if sub_res.data and len(sub_res.data) > 0:
+        is_active = sub_res.data[0].get("is_active", False)
+        raw_end = sub_res.data[0].get("subscription_end")
+        if raw_end:
+            ends_at = str(raw_end)[:10]
+
+    stats = {
+        "total_accounts": total_accounts,
+        "is_active": is_active,
+        "subscription_status": "نشط 🟢" if is_active else "غير مفعل 🔴",
+        "subscription_end": ends_at
+    }
+    
+    return stats, accounts_res.data if accounts_res.data else []
+
+
+# 1. المسار الأول للإحصائيات المختصرة
+@app.get("/api/user-stats")
 async def get_user_stats(user_id: str):
     try:
-        accounts_res = supabase.table("telegram_accounts").select("id", count="exact").eq("user_id", user_id).execute()
-        total_accounts = accounts_res.count if accounts_res.count is not None else len(accounts_res.data)
-        sub_res = supabase.table("users_subscriptions").select("is_active, subscription_end").eq("user_id", user_id).execute()
-
-        is_active = False
-        ends_at = "غير محدد"
-        if sub_res.data and len(sub_res.data) > 0:
-            is_active = sub_res.data[0].get("is_active", False)
-            raw_end = sub_res.data[0].get("subscription_end")
-            if raw_end:
-                ends_at = str(raw_end)[:10]
-
-        return {
-            "status": "success",
-            "stats": {
-                "total_accounts": total_accounts,
-                "is_active": is_active,
-                "subscription_status": "نشط 🟢" if is_active else "غير مفعل 🔴",
-                "subscription_end": ends_at
-            }
-        }
+        stats, _ = await fetch_user_stats_data(user_id)
+        return {"status": "success", "stats": stats}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-# دعم مسار الواجهة الأمامية بالكامل لتجنب خطأ 404 نهائياً
+
+# 2. المسار الثاني للإحصائيات المفصلة
 @app.get("/api/detailed-stats")
 async def get_detailed_stats(user_id: str):
     try:
-        accounts_res = supabase.table("telegram_accounts").select("id, phone", count="exact").eq("user_id", user_id).execute()
-        total_accounts = accounts_res.count if accounts_res.count is not None else len(accounts_res.data)
-
-        sub_res = supabase.table("users_subscriptions").select("is_active, subscription_end").eq("user_id", user_id).execute()
-
-        is_active = False
-        ends_at = "غير محدد"
-
-        if sub_res.data and len(sub_res.data) > 0:
-            is_active = sub_res.data[0].get("is_active", False)
-            raw_end = sub_res.data[0].get("subscription_end")
-            if raw_end:
-                ends_at = str(raw_end)[:10]
-
+        stats, accounts = await fetch_user_stats_data(user_id)
         return {
             "status": "success",
-            "stats": {
-                "total_accounts": total_accounts,
-                "is_active": is_active,
-                "subscription_status": "نشط 🟢" if is_active else "غير مفعل 🔴",
-                "subscription_end": ends_at
-            },
-            "accounts": accounts_res.data if accounts_res.data else []
+            "stats": stats,
+            "accounts": accounts
         }
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"فشل جلب الإحصائيات: {str(e)}")
-
+        
 @app.get("/api/account-count")
 async def get_account_count(user_id: str):
     response = supabase.table("telegram_accounts").select("id", count="exact").eq("user_id", user_id).execute()
