@@ -538,7 +538,7 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
 
 
 
-async def run_heavy_duty_engine(accounts_data: list, source_group: str, target_group: str, api_id: int, api_hash: str):
+asyncio.create_task(run_heavy_duty_engine(accounts.data, req.source_group, req.target_group, API_ID, API_HASH))
     if not accounts_data:
         return
 
