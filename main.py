@@ -537,48 +537,49 @@ async def process_account_queue(acc_data, user_queue, source_raw, target_raw, ap
         print(f"🏁 انتهى الحساب {phone} من دفعة الإضافة بنجاح بإجمالي: {adds_count} عضو.")
 
 
+# إطلاق المحرك في الخلفية مع تمرير المعرفات بالشكل الصحيح
+asyncio.create_task(run_heavy_duty_engine(accounts.data, req.source_group, req.target_group, api_id, api_hash))
 
-asyncio.create_task(run_heavy_duty_engine(accounts.data, req.source_group, req.target_group, API_ID, API_HASH))
-    if not accounts_data:
+if not accounts_data:
+    return
+
+master_acc = accounts_data[0]
+master_client = TelegramClient(StringSession(master_acc["session_string"]), api_id, api_hash)
+
+try:
+    await master_client.connect()
+    if not await master_client.is_user_authorized():
+        print("💥 حساب الماستر غير مصرح له بالدخول لجلب الأعضاء.")
         return
 
-    master_acc = accounts_data[0]
-    master_client = TelegramClient(StringSession(master_acc["session_string"]), api_id, api_hash)
+    await safe_join_chat(master_client, source_group)
+    src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
+    src_entity = await master_client.get_entity(src_clean)
+    
+    scraped_users = await run_scraper_task(master_client, src_entity)
+except Exception as e:
+    print(f"💥 خطأ حرج في السحب: {e}")
+    return
+finally:
+    await master_client.disconnect()
 
-    try:
-        await master_client.connect()
-        if not await master_client.is_user_authorized():
-            print("💥 حساب الماستر غير مصرح له بالدخول لجلب الأعضاء.")
-            return
+if not scraped_users:
+    print("⚠️ لم يتم العثور على أي أعضاء في المجموعة المصدر.")
+    return
 
-        await safe_join_chat(master_client, source_group)
-        src_clean = source_group.replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").strip()
-        src_entity = await master_client.get_entity(src_clean)
-        
-        scraped_users = await run_scraper_task(master_client, src_entity)
-    except Exception as e:
-        print(f"💥 خطأ حرج في السحب: {e}")
-        return
-    finally:
-        await master_client.disconnect()
+user_queue = list(scraped_users)
+print(f"🚀 تم سحب {len(user_queue)} عضو بنجاح، وبدء ضخ الأسطول المتوازي...")
+await send_telegram_notification(f"🚀 [السرعة القصوى] بدء ضخ {len(user_queue)} عضو عبر الأسطول المتوازي!")
 
-    if not scraped_users:
-        print("⚠️ لم يتم العثور على أي أعضاء في المجموعة المصدر.")
-        return
+async def worker(acc):
+    while user_queue:
+        if not user_queue:
+            break
+        await process_account_queue(acc, user_queue, source_group, target_group, api_id, api_hash)
+        await asyncio.sleep(2)
 
-    user_queue = list(scraped_users)
-    print(f"🚀 تم سحب {len(user_queue)} عضو بنجاح، وبدء ضخ الأسطول المتوازي...")
-    await send_telegram_notification(f"🚀 [السرعة القصوى] بدء ضخ {len(user_queue)} عضو عبر الأسطول المتوازي!")
+tasks = [worker(acc) for acc in accounts_data]
+await asyncio.gather(*tasks)
 
-    async def worker(acc):
-        while user_queue:
-            if not user_queue:
-                break
-            # تصحيح تمرير الوسائط بالترتيب الصحيح تماماً
-            await process_account_queue(acc, user_queue, source_group, target_group, api_id, api_hash)
-            await asyncio.sleep(2)
-
-    tasks = [worker(acc) for acc in accounts_data]
-    await asyncio.gather(*tasks)
-    print("🎉 اكتملت عملية الإضافة الفائقة بنجاح تام!")
-    await send_telegram_notification("🎉 اكتملت عملية الإضافة الفائقة بنجاح تام!")
+print("🎉 اكتملت عملية الإضافة الفائقة بنجاح تام!")
+await send_telegram_notification("🎉 اكتملت عملية الإضافة الفائقة بنجاح تام!")
